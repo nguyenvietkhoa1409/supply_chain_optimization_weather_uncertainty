@@ -1,0 +1,29 @@
+# Weather-Aware Supply Chain Optimization - Dependencies
+# Python 3.10+
+
+# Core Optimization
+pulp>=2.7.0              # Linear programming modeling
+ortools>=9.6.0           # Google OR-Tools (for VRP heuristics, optional)
+
+# Scientific Computing
+numpy>=1.24.0
+pandas>=2.0.0
+scipy>=1.10.0
+
+# Data Handling
+python-dateutil>=2.8.2
+
+# Configuration
+PyYAML>=6.0
+
+# Visualization (optional, for analysis)
+matplotlib>=3.7.0
+seaborn>=0.12.0
+
+# Testing (optional)
+pytest>=7.3.0
+pytest-cov>=4.1.0
+
+# Development (optional)
+ipython>=8.12.0
+jupyter>=1.0.0

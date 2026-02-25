@@ -1,0 +1,30 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+venv/
+
+# Data (large files)
+data/synthetic/**/*.csv
+data/synthetic/**/*.json
+data/scenarios/**/*.csv
+data/scenarios/**/*.json
+
+# Results (generated)
+results/**/*.csv
+results/**/*.json
+logs/**/*.log
+
+# IDE
+.vscode/
+.idea/
+*.swp
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Keep structure but ignore content
+!data/*/.gitkeep
+!results/*/.gitkeep

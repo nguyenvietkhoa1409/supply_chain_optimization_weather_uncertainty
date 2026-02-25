@@ -1,0 +1,72 @@
+[
+  {
+    "scenario_id": 11,
+    "name": "Normal Monsoon Day",
+    "severity_level": 1,
+    "description": "Typical monsoon day - intermittent rain, comfortable temperature",
+    "rainfall_mm_per_day": 12.0,
+    "temperature_celsius": 26.0,
+    "wind_speed_kmh": 18.0,
+    "speed_reduction_factor": 1.08,
+    "capacity_reduction_factor": 0.95,
+    "spoilage_multiplier": 1.0,
+    "road_closure_probability": 0.02,
+    "probability": 0.3
+  },
+  {
+    "scenario_id": 12,
+    "name": "Light Rain",
+    "severity_level": 2,
+    "description": "Steady light rain throughout the day",
+    "rainfall_mm_per_day": 18.0,
+    "temperature_celsius": 25.0,
+    "wind_speed_kmh": 22.0,
+    "speed_reduction_factor": 1.15,
+    "capacity_reduction_factor": 0.9,
+    "spoilage_multiplier": 1.05,
+    "road_closure_probability": 0.05,
+    "probability": 0.25
+  },
+  {
+    "scenario_id": 13,
+    "name": "Moderate Rain",
+    "severity_level": 3,
+    "description": "Heavy rain periods, localized flooding possible",
+    "rainfall_mm_per_day": 45.0,
+    "temperature_celsius": 24.0,
+    "wind_speed_kmh": 30.0,
+    "speed_reduction_factor": 1.25,
+    "capacity_reduction_factor": 0.8,
+    "spoilage_multiplier": 1.15,
+    "road_closure_probability": 0.1,
+    "probability": 0.2
+  },
+  {
+    "scenario_id": 14,
+    "name": "Heavy Rain",
+    "severity_level": 4,
+    "description": "Intense rainfall, widespread flooding, travel hazardous",
+    "rainfall_mm_per_day": 85.0,
+    "temperature_celsius": 23.0,
+    "wind_speed_kmh": 40.0,
+    "speed_reduction_factor": 1.55,
+    "capacity_reduction_factor": 0.6,
+    "spoilage_multiplier": 1.3,
+    "road_closure_probability": 0.35,
+    "probability": 0.15
+  },
+  {
+    "scenario_id": 15,
+    "name": "Tropical Storm/Typhoon",
+    "severity_level": 5,
+    "description": "Typhoon conditions - severe disruption, routes closed",
+    "rainfall_mm_per_day": 180.0,
+    "temperature_celsius": 22.0,
+    "wind_speed_kmh": 85.0,
+    "speed_reduction_factor": 2.2,
+    "capacity_reduction_factor": 0.15,
+    "spoilage_multiplier": 2.0,
+    "road_closure_probability": 0.85,
+    "probability": 0.1
+  }
+]
