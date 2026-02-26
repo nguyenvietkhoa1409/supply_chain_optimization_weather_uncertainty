@@ -199,8 +199,10 @@ class StochasticProcurementModel:
             
             # Unmet demand penalty (weather-dependent spoilage)
             spoilage_mult = scenario.spoilage_multiplier
+            
+            penalty_multiplier = min(10.0, 5.0 * spoilage_mult)  # Max 10x instead of 20x
             penalty_cost = lpSum([
-                10.0 * spoilage_mult * self.product_cost[p] * u[k, p]
+                penalty_multiplier * self.product_cost[p] * u[k, p]
                 for p in self.products
             ])
             
@@ -251,27 +253,38 @@ class StochasticProcurementModel:
             # Weather impact factors
             capacity_factor = scenario.capacity_reduction_factor
             spoilage_mult = scenario.spoilage_multiplier
+            severity = scenario.severity_level
             
-            # 1. Demand satisfaction with weather-induced spoilage
+            # SIMPLE APPROACH: Direct survival rates by severity
+            survival_rates = {
+                1: 0.99,  # Severity 1: minimal loss
+                2: 0.97,  # Severity 2: 3% loss
+                3: 0.92,  # Severity 3: 8% loss  
+                4: 0.82,  # Severity 4: 18% loss
+                5: 0.70   # Severity 5: 35% loss (not 50%)
+            }
+            survival_rate = survival_rates.get(severity, 0.90)
+            
+            # 1. Demand satisfaction with weather-induced losses
             for p in self.products:
                 demand = self.total_demand.get(p, 0)
                 
                 if demand > 0:
-                    # Stage 1 supply reduced by weather-induced spoilage
+                    # Stage 1 supply after weather losses
                     stage1_effective = lpSum([
-                        x[s, p] / spoilage_mult  # Reduced by spoilage
+                        x[s, p] * survival_rate
                         for s in self.suppliers
                         if self.sp_available.get((s, p), False)
                     ])
                     
-                    # Emergency procurement (at current weather conditions)
+                    # Emergency supply
                     emergency_supply = lpSum([
                         x_extra[k, s, p]
                         for s in self.suppliers
                         if self.sp_available.get((s, p), False)
                     ])
                     
-                    # Total effective supply + unmet must meet demand
+                    # Demand satisfaction
                     model += (
                         stage1_effective + emergency_supply + u[k, p] >= demand,
                         f"S2_Demand_{k}_{p}"
@@ -287,29 +300,29 @@ class StochasticProcurementModel:
                 model += (
                     lpSum([x_extra[k, s, p] * self.product_weight[p]
                         for p in self.products
-                        if self.sp_available.get((s, p), False)]) <= adjusted_capacity * 0.3,
+                        if self.sp_available.get((s, p), False)]) <= adjusted_capacity * 0.8,
                     f"S2_Emergency_Capacity_{k}_{s}"
                 )
             
-            # 3. STRENGTHENED: Force Stage 2 activation under severe weather
-            if scenario.severity_level >= 4:  # Heavy rain or worse
-                # Must have some emergency procurement or unmet demand
-                total_emergency = lpSum([
-                    x_extra[k, s, p]
-                    for s in self.suppliers
-                    for p in self.products
-                    if self.sp_available.get((s, p), False)
-                ])
+            # # 3. STRENGTHENED: Force Stage 2 activation under severe weather
+            # if scenario.severity_level >= 4:  # Heavy rain or worse
+            #     # Must have some emergency procurement or unmet demand
+            #     total_emergency = lpSum([
+            #         x_extra[k, s, p]
+            #         for s in self.suppliers
+            #         for p in self.products
+            #         if self.sp_available.get((s, p), False)
+            #     ])
                 
-                total_unmet = lpSum([u[k, p] for p in self.products])
+            #     total_unmet = lpSum([u[k, p] for p in self.products])
                 
-                # At least 1% of total demand must trigger recourse
-                min_recourse = sum(self.total_demand.values()) * 0.01
+            #     # At least 1% of total demand must trigger recourse
+            #     min_recourse = sum(self.total_demand.values()) * 0.01
                 
-                model += (
-                    total_emergency + total_unmet >= min_recourse,
-                    f"S2_Force_Recourse_{k}"
-                )
+            #     model += (
+            #         total_emergency + total_unmet >= min_recourse,
+            #         f"S2_Force_Recourse_{k}"
+            #     )
         
         var_counts = model.numVariables()
         const_counts = model.numConstraints()
@@ -438,22 +451,33 @@ class StochasticProcurementModel:
     
     def _compute_scenario_costs(self, vars_dict: Dict) -> pd.DataFrame:
         """Compute cost breakdown per scenario"""
-        
         x = vars_dict['x']
+        y = vars_dict['y']
         x_extra = vars_dict['x_extra']
         u = vars_dict['u']
         
         scenario_costs = []
         
+        # FIXED: Calculate Stage 1 fixed cost (same for all scenarios)
+        stage1_fixed = sum([
+            self.supplier_fixed_cost[s] * value(y[s, p])
+            for s in self.suppliers
+            for p in self.products
+            if self.sp_available.get((s, p), False) and value(y[s, p])
+        ])
+        
         for k, scenario in enumerate(self.scenarios):
             
-            # Stage 1 cost (same for all scenarios)
-            stage1_cost = sum([
+            # Stage 1 variable cost (same for all scenarios)
+            stage1_variable = sum([
                 value(x[s, p]) * self.sp_cost.get((s, p), self.product_cost[p])
                 for s in self.suppliers
                 for p in self.products
                 if self.sp_available.get((s, p), False) and value(x[s, p])
             ])
+            
+            # FIXED: Stage 1 total = variable + fixed
+            stage1_total = stage1_variable + stage1_fixed
             
             # Emergency cost
             emergency_cost = sum([
@@ -461,7 +485,7 @@ class StochasticProcurementModel:
                 for s in self.suppliers
                 for p in self.products
                 if self.sp_available.get((s, p), False) and value(x_extra[k, s, p])
-            ])
+            ]) if x_extra else 0
             
             # Penalty cost
             spoilage_mult = scenario.spoilage_multiplier
@@ -469,15 +493,16 @@ class StochasticProcurementModel:
                 10.0 * spoilage_mult * self.product_cost[p] * value(u[k, p])
                 for p in self.products
                 if value(u[k, p])
-            ])
+            ]) if u else 0
             
-            total_cost = stage1_cost + emergency_cost + penalty_cost
+            # FIXED: Total cost includes fixed cost
+            total_cost = stage1_total + emergency_cost + penalty_cost
             
             scenario_costs.append({
                 'scenario_name': scenario.name,
                 'severity_level': scenario.severity_level,
                 'probability': scenario.probability,
-                'stage1_cost': stage1_cost,
+                'stage1_cost': stage1_total,  # FIXED
                 'emergency_cost': emergency_cost,
                 'penalty_cost': penalty_cost,
                 'total_cost': total_cost

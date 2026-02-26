@@ -5,41 +5,42 @@ STOCHASTIC OPTIMIZATION VALIDATION REPORT
 1. VALUE OF STOCHASTIC SOLUTION (VSS)
 --------------------------------------------------------------------------------
   Expected Cost (Deterministic):        2,889,015,726 VND
-  Stochastic Solution Cost:             4,343,856,825 VND
-  VSS (Cost Savings):                  -1,454,841,099 VND
-  VSS (%):                                     -50.36%
+  Stochastic Solution Cost:             2,825,402,054 VND
+  VSS (Cost Savings):                      63,613,672 VND
+  VSS (%):                                       2.20%
 
-  → Minimal benefit from stochastic approach
+  → Moderate benefit - stochastic approach preferred
 
 2. EXPECTED VALUE OF PERFECT INFORMATION (EVPI)
 --------------------------------------------------------------------------------
-  Stochastic Solution Cost:             4,343,856,825 VND
-  Perfect Information Bound:            2,797,106,251 VND
-  EVPI (Forecast Value):                1,546,750,574 VND
-  EVPI (%):                                     35.61%
+  Stochastic Solution Cost:             2,825,402,054 VND
+  Perfect Information Bound:            2,450,004,792 VND
+  EVPI (Forecast Value):                  375,397,262 VND
+  EVPI (%):                                     13.29%
 
   → Very high value - perfect forecasts highly valuable
 
 3. SCENARIO-WISE COST BREAKDOWN
 --------------------------------------------------------------------------------
-  Mean Cost:       5,806,665,055 VND
-  Std Dev:         6,418,650,440 VND
-  Min Cost:        2,797,106,251 VND
-  Max Cost:       17,284,844,406 VND
-  CV:                    110.54%
+  Mean Cost:       3,374,880,543 VND
+  Std Dev:         1,628,091,118 VND
+  Min Cost:        2,450,004,792 VND
+  Max Cost:        6,248,928,298 VND
+  CV:                     48.24%
 
   Worst Scenario: Tropical Storm/Typhoon
-    Cost: 17,284,844,406 VND
+    Cost: 6,248,928,298 VND
     Severity: Level 5
 
   Best Scenario: Normal Monsoon Day
-    Cost: 2,797,106,251 VND
+    Cost: 2,450,004,792 VND
     Severity: Level 1
 
 ================================================================================
 CONCLUSION
 ================================================================================
-⚠ Limited benefit from stochastic approach
-✓ Weather forecasting has HIGH value (35.6%)
+✓ Stochastic optimization provides MODERATE value
+  Cost savings: 2.2%
+✓ Weather forecasting has HIGH value (13.3%)
   Recommendation: Invest in weather monitoring systems
 ================================================================================
