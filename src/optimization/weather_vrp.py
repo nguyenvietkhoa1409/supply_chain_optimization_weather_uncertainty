@@ -1,469 +1,446 @@
 """
-Weather-Aware Vehicle Routing Problem (VRP)
-FIXED VERSION - Relaxed constraints for feasibility
+Weather-Aware Vehicle Routing Problem (VRP) – Standalone Module
+FIXED VERSION
 
-Key changes from original:
-- Freshness: 80% shelf life (was 50%)
-- Added unmet demand variables
-- Simplified delivery constraints
-- Removed MTZ subtour elimination (too tight)
+Fixes applied
+─────────────
+[CRITICAL / V-1]  VRP no longer returns inf cost.
+    Root cause: Under Level 5 (capacity_factor=0.10), effective vehicle capacity
+    = 1000 × 0.10 = 100 kg × 3 vehicles = 300 kg — less than weekly demand.
+    Old code: hard capacity constraint → solver returns Infeasible → Python assigns
+    np.inf → cascade through generate_report().
+
+    Fix (two parts):
+    a) Unmet demand variable u[i,p] with penalty cost (already existed but was
+       not correctly preventing infeasibility). Strengthened by ensuring
+       u[i,p] has no upper bound — any shortfall is always feasible at a cost.
+    b) When VRP solver returns Infeasible or timeout, fall back to a penalty-only
+       cost estimate rather than np.inf. The fallback cost =
+       Σ demand × penalty_per_unit, clearly finite and signals the severity.
+
+[HIGH / V-4]  Depot no longer hardcoded to dcs.iloc[0].
+    OLD: self.depot = network['dcs']['id'].iloc[0]
+    NEW: each solve() call receives the scenario and selects the accessible DC.
+         DC accessibility logic:
+           - DC_001 (Hòa Khánh): low-lying industrial zone → inaccessible Level 4+
+           - DC_002 (Liên Chiểu): elevated → accessible all levels
+         If no DC is accessible (should not happen; DC_002 is always accessible),
+         fall back to DC_001 with a warning.
+
+[V-2 note]  Arc-level spoilage cost added to VRP objective.
+    cost_spoil[i,j,k,p] = c_sp_p × Q[i,p,v] × (1 − exp(−k_i(T_k) · t_{ij}(k)))
+    Linearised as: α_spoil × c_sp_p × Q[i,p,v] × t_{ij}(k)
+    where α_spoil is a small rate constant (0.05/h baseline, scaled by temperature).
 """
 
-import pandas as pd
-import numpy as np
-from pulp import *
-from typing import Dict, List, Tuple
 import time
+from typing import Dict, List, Optional, Tuple
+
+import numpy as np
+import pandas as pd
+from pulp import (
+    PULP_CBC_CMD,
+    LpMinimize,
+    LpProblem,
+    LpStatus,
+    LpVariable,
+    lpSum,
+    value,
+)
 
 
 class WeatherAwareVRP:
     """
-    Vehicle Routing Problem with weather scenario integration
-    RELAXED VERSION for practical feasibility
+    Vehicle Routing Problem with weather scenario integration.
+
+    Designed to be called per scenario from IntegratedStochasticModel.
+    Always returns a finite cost (inf-free guarantee).
     """
-    
-    def __init__(self,
-                 network: Dict,
-                 products_df: pd.DataFrame,
-                 demand_df: pd.DataFrame,
-                 procurement_solution: pd.DataFrame,
-                 weather_scenarios: List,
-                 vehicle_config: Dict = None):
-        
+
+    # DC accessibility: maps DC name substring → max_severity_level accessible
+    _DC_MAX_SEVERITY = {
+        "Hoa Khanh": 3,   # floods at Level 4+
+        "Lien Chieu": 5,  # elevated, always accessible
+    }
+
+    def __init__(
+        self,
+        network: Dict,
+        products_df: pd.DataFrame,
+        demand_df: pd.DataFrame,
+        procurement_solution: pd.DataFrame,
+        weather_scenarios: List,
+        vehicle_config: Dict = None,
+    ):
         self.network = network
         self.products_df = products_df
         self.demand_df = demand_df
         self.procurement = procurement_solution
         self.scenarios = weather_scenarios
-        
-        # Default vehicle configuration
-        default_config = {
-            'num_vehicles': 3,
-            'capacity_kg': 1500,
-            'base_speed_kmh': 40,
-            'cost_per_km': 5000,
-            'cost_per_hour': 50000,
-            'max_route_time_hours': 10  # Increased from 8
+
+        default_cfg = {
+            "num_vehicles": 3,
+            "capacity_kg": 1000,
+            "base_speed_kmh": 40,
+            "cost_per_km": 5_000,
+            "cost_per_hour": 50_000,
+            "max_route_time_hours": 10,
+            "unmet_penalty_per_unit": 80_000,  # VND – larger than transport cost to discourage
         }
-        
-        if vehicle_config is None:
-            self.vehicle_config = default_config
-        else:
-            self.vehicle_config = {**default_config, **vehicle_config}
-        
-        # Extract data
-        self.stores = network['stores']['id'].tolist()
-        self.products = products_df['id'].tolist()
-        
-        # Use actual DC as depot
-        if 'dcs' in network and len(network['dcs']) > 0:
-            self.depot = network['dcs']['id'].iloc[0]
-        else:
-            self.depot = 'DEPOT'
-        
+        self.vehicle_config = {**default_cfg, **(vehicle_config or {})}
+
+        self.stores = network["stores"]["id"].tolist()
+        self.products = products_df["id"].tolist()
+
         self._create_lookups()
-        
-        print(f"Weather-Aware VRP Initialized (RELAXED):")
-        print(f"  - Stores: {len(self.stores)}")
-        print(f"  - Products: {len(self.products)}")
-        print(f"  - Vehicles: {self.vehicle_config['num_vehicles']}")
-        print(f"  - Depot: {self.depot}")
-    
+
+        print("WeatherAwareVRP (FIXED):")
+        print(f"  Stores: {len(self.stores)}, Products: {len(self.products)}")
+        print(f"  Vehicles: {self.vehicle_config['num_vehicles']}")
+
+    # ------------------------------------------------------------------
     def _create_lookups(self):
-        """Create parameter lookup dictionaries"""
-        
-        # Distance matrix
+        dist_matrix = self.network["distance_matrix"]
+
+        dcs = self.network["dcs"]["id"].tolist()
+        all_locs = dcs + self.stores
+
         self.distance = {}
-        dist_matrix = self.network['distance_matrix']
-        
-        all_locs = [self.depot] + self.stores
         for i in all_locs:
             for j in all_locs:
                 if i != j:
                     try:
-                        self.distance[(i, j)] = dist_matrix.loc[i, j]
-                    except:
-                        # Fallback: symmetric distance
+                        self.distance[(i, j)] = float(dist_matrix.loc[i, j])
+                    except Exception:
                         try:
-                            self.distance[(i, j)] = dist_matrix.loc[j, i]
-                        except:
-                            self.distance[(i, j)] = 10.0  # Default 10km
-        
-        # Demand by store-product
+                            self.distance[(i, j)] = float(dist_matrix.loc[j, i])
+                        except Exception:
+                            self.distance[(i, j)] = 10.0
+
+        # Store-level demand
         self.demand = {}
-        for _, row in self.demand_df.groupby(['store_id', 'product_id'])['demand_units'].sum().reset_index().iterrows():
-            self.demand[(row['store_id'], row['product_id'])] = row['demand_units']
-        
-        # Product weight
-        self.product_weight = dict(zip(
-            self.products_df['id'],
-            self.products_df['weight_kg_per_unit']
-        ))
-        
-        # Product shelf life (in hours)
-        self.shelf_life_hours = {}
-        for _, prod in self.products_df.iterrows():
-            self.shelf_life_hours[prod['id']] = prod['shelf_life_days'] * 24
-    
-    def build_model(self, scenario_id: int = None) -> Tuple[LpProblem, Dict]:
-        """Build simplified VRP - RELAXED for feasibility"""
-        
-        if scenario_id is None:
-            speed_factor = np.mean([s.speed_reduction_factor for s in self.scenarios])
-            capacity_factor = np.mean([s.capacity_reduction_factor for s in self.scenarios])
-            scenario_name = "Expected"
-        else:
-            scenario = self.scenarios[scenario_id]
-            speed_factor = scenario.speed_reduction_factor
-            capacity_factor = scenario.capacity_reduction_factor
-            scenario_name = scenario.name
-        
-        print(f"\nBuilding RELAXED VRP for: {scenario_name}")
-        
-        model = LpProblem(f"VRP_{scenario_name}", LpMinimize)
-        
-        locations = [self.depot] + self.stores
-        vehicles = list(range(self.vehicle_config['num_vehicles']))
-        
-        # =================================================================
-        # VARIABLES
-        # =================================================================
-        
-        # x[i,j,v]: route arc
-        x = LpVariable.dicts("route",
-                            ((i, j, v) for i in locations for j in locations 
-                             for v in vehicles if i != j),
-                            cat='Binary')
-        
-        # q[i,p,v]: delivery quantity
-        q = LpVariable.dicts("delivery",
-                            ((i, p, v) for i in self.stores for p in self.products 
-                             for v in vehicles),
-                            lowBound=0,
-                            cat='Continuous')
-        
-        # ADDED: Unmet demand (backup feasibility)
-        unmet = LpVariable.dicts("unmet",
-                                ((i, p) for i in self.stores for p in self.products),
-                                lowBound=0,
-                                cat='Continuous')
-        
-        # =================================================================
-        # OBJECTIVE
-        # =================================================================
-        
-        base_speed = self.vehicle_config['base_speed_kmh']
-        adjusted_speed = base_speed * speed_factor
-        adjusted_capacity = self.vehicle_config['capacity_kg'] * capacity_factor
-        
-        # Distance cost
-        distance_cost = lpSum([
-            self.distance.get((i, j), 0) * self.vehicle_config['cost_per_km'] * x[i, j, v]
+        grp = (
+            self.demand_df.groupby(["store_id", "product_id"])["demand_units"]
+            .sum()
+            .reset_index()
+        )
+        for _, row in grp.iterrows():
+            self.demand[(row["store_id"], row["product_id"])] = float(row["demand_units"])
+
+        self.product_weight = dict(
+            zip(self.products_df["id"], self.products_df["weight_kg_per_unit"])
+        )
+        self.product_cost = dict(
+            zip(self.products_df["id"], self.products_df["unit_cost_vnd"])
+        )
+
+        # Spoilage rate constant: base α = 0.05 /h (linearised Arrhenius, T_ref=26°C)
+        # Scaled by temperature in solve()
+        self.base_spoilage_rate = 0.05   # /h, per unit quantity
+
+    # ------------------------------------------------------------------
+    def _select_depot(self, scenario) -> str:
+        """
+        [V-4 FIX] Select accessible DC for this scenario.
+
+        Hòa Khánh DC → accessible for Level ≤ 3
+        Liên Chiểu DC → always accessible
+
+        Returns DC id string.
+        """
+        dcs_df = self.network["dcs"]
+        severity = scenario.severity_level
+
+        for _, dc in dcs_df.iterrows():
+            dc_name = dc["name"]
+            max_sev = 5  # default: always accessible
+            for key, val in self._DC_MAX_SEVERITY.items():
+                if key.lower().replace(" ", "") in dc_name.lower().replace(" ", ""):
+                    max_sev = val
+                    break
+            if severity <= max_sev:
+                return dc["id"]
+
+        # Fallback (should not reach here if Liên Chiểu DC is in dataset)
+        print(f"  ⚠ No accessible DC found for severity {severity}; using first DC as fallback")
+        return dcs_df["id"].iloc[0]
+
+    # ------------------------------------------------------------------
+    def build_model(self, scenario_id: int) -> Tuple[LpProblem, Dict]:
+        sc = self.scenarios[scenario_id]
+        depot = self._select_depot(sc)  # [V-4 FIX]
+
+        speed_factor = 1.0 / sc.speed_reduction_factor   # convert travel-time factor to speed factor
+        capacity_factor = sc.capacity_reduction_factor
+        adjusted_speed = self.vehicle_config["base_speed_kmh"] * speed_factor
+        adjusted_capacity = self.vehicle_config["capacity_kg"] * capacity_factor
+
+        # [V-2] Temperature-scaled spoilage rate (Q10-based, simplified)
+        T_k = sc.temperature_celsius
+        T_ref = 26.0
+        alpha_spoil = self.base_spoilage_rate * (2.0 ** ((T_k - T_ref) / 10.0))
+
+        print(f"\n  Scenario [{sc.name}]: depot={depot}, cap={adjusted_capacity:.0f}kg, speed={adjusted_speed:.1f}km/h")
+
+        model = LpProblem(f"VRP_{sc.name.replace(' ', '_')}", LpMinimize)
+
+        locations = [depot] + self.stores
+        vehicles = list(range(self.vehicle_config["num_vehicles"]))
+
+        # ── VARIABLES ─────────────────────────────────────────────────
+        arc = LpVariable.dicts(
+            "arc",
+            ((i, j, v) for i in locations for j in locations for v in vehicles if i != j),
+            cat="Binary",
+        )
+        qty = LpVariable.dicts(
+            "qty",
+            ((r, p, v) for r in self.stores for p in self.products for v in vehicles),
+            lowBound=0,
+        )
+        # [V-1 FIX] Unbounded unmet demand — always feasible
+        unmet = LpVariable.dicts(
+            "unmet",
+            ((r, p) for r in self.stores for p in self.products),
+            lowBound=0,
+        )
+        # MTZ position variables for subtour elimination
+        T_mtz = LpVariable.dicts(
+            "T_mtz",
+            ((j, v) for j in locations for v in vehicles),
+            lowBound=0,
+            upBound=float(self.vehicle_config["max_route_time_hours"]),
+        )
+
+        # ── OBJECTIVE ─────────────────────────────────────────────────
+        dist_cost = lpSum(
+            self.distance.get((i, j), 0)
+            * self.vehicle_config["cost_per_km"]
+            * arc[i, j, v]
             for i in locations
             for j in locations
             for v in vehicles
-            if i != j and (i, j) in self.distance
-        ])
-        
-        # Time cost
-        time_cost = lpSum([
-            (self.distance.get((i, j), 0) / adjusted_speed) * 
-            self.vehicle_config['cost_per_hour'] * x[i, j, v]
+            if i != j
+        )
+        time_cost = lpSum(
+            (self.distance.get((i, j), 0) / max(adjusted_speed, 1.0))
+            * self.vehicle_config["cost_per_hour"]
+            * arc[i, j, v]
             for i in locations
             for j in locations
             for v in vehicles
-            if i != j and (i, j) in self.distance
-        ])
-        
-        # PENALTY for unmet demand (make it expensive but not infeasible)
-        penalty_cost = lpSum([
-            50000 * unmet[i, p]  # 50k VND/unit penalty
-            for i in self.stores
+            if i != j
+        )
+        # [V-2] Arc-level spoilage cost (linearised)
+        spoil_cost = lpSum(
+            alpha_spoil
+            * (self.distance.get((i, r), 0) / max(adjusted_speed, 1.0))
+            * self.product_cost[p]
+            * qty[r, p, v]
+            for i in locations
+            for r in self.stores
             for p in self.products
-        ])
-        
-        model += distance_cost + time_cost + penalty_cost, "Total_Cost"
-        
-        # =================================================================
-        # CONSTRAINTS (SIMPLIFIED)
-        # =================================================================
-        
-        # 1. Each store visited at most once per vehicle
-        for i in self.stores:
-            model += (
-                lpSum([x[j, i, v] for j in locations for v in vehicles 
-                      if i != j and (j, i, v) in x]) >= 1,  # At least once total
-                f"Visit_{i}"
-            )
-        
-        # 2. Flow conservation
+            for v in vehicles
+            if i != r
+        )
+        # [V-1 FIX] Unmet demand penalty (large but finite → never inf)
+        penalty = lpSum(
+            self.vehicle_config["unmet_penalty_per_unit"] * unmet[r, p]
+            for r in self.stores
+            for p in self.products
+        )
+
+        model += dist_cost + time_cost + spoil_cost + penalty, "Total_VRP_Cost"
+
+        # ── CONSTRAINTS ───────────────────────────────────────────────
+        M_big = self.vehicle_config["max_route_time_hours"] + 1.0
+
+        # 1. Flow conservation at each node for each vehicle
         for v in vehicles:
             for i in locations:
-                inflow = lpSum([x[j, i, v] for j in locations 
-                               if i != j and (j, i, v) in x])
-                outflow = lpSum([x[i, j, v] for j in locations 
-                                if i != j and (i, j, v) in x])
-                
-                model += (inflow == outflow, f"Flow_{i}_{v}")
-        
-        # 3. Depot start/end
+                in_flow = lpSum(arc[j, i, v] for j in locations if j != i)
+                out_flow = lpSum(arc[i, j, v] for j in locations if j != i)
+                model += (in_flow == out_flow, f"Flow_{i}_{v}")
+
+        # 2. Each vehicle leaves depot at most once
         for v in vehicles:
             model += (
-                lpSum([x[self.depot, j, v] for j in self.stores 
-                      if (self.depot, j, v) in x]) <= 1,
-                f"Start_{v}"
+                lpSum(arc[depot, j, v] for j in self.stores) <= 1,
+                f"Depart_{v}",
             )
-        
-        # 4. Vehicle capacity
+
+        # 3. Each store visited at least once (across all vehicles)
+        for r in self.stores:
+            model += (
+                lpSum(arc[i, r, v] for i in locations for v in vehicles if i != r) >= 1,
+                f"Visit_{r}",
+            )
+
+        # 4. Vehicle load capacity [V-1 FIX: adjusted_capacity may be very small;
+        #    unmet demand absorbs the gap, so this constraint will not cause infeasibility]
         for v in vehicles:
-            total_load = lpSum([
-                q[i, p, v] * self.product_weight[p]
-                for i in self.stores
-                for p in self.products
-            ])
-            
-            model += (total_load <= adjusted_capacity, f"Capacity_{v}")
-        
-        # 5. Demand satisfaction (WITH UNMET)
-        for i in self.stores:
+            model += (
+                lpSum(
+                    qty[r, p, v] * self.product_weight[p]
+                    for r in self.stores
+                    for p in self.products
+                )
+                <= adjusted_capacity,
+                f"Cap_{v}",
+            )
+
+        # 5. Demand satisfaction (with unmet safety valve)
+        for r in self.stores:
             for p in self.products:
-                demand_qty = self.demand.get((i, p), 0)
-                if demand_qty > 0:
-                    total_delivery = lpSum([q[i, p, v] for v in vehicles])
+                d = self.demand.get((r, p), 0)
+                if d > 0:
                     model += (
-                        lpSum([q[i, p, v] for v in vehicles]) + unmet[i, p] >= demand_qty,
-                        f"Demand_{i}_{p}"
+                        lpSum(qty[r, p, v] for v in vehicles) + unmet[r, p] >= d,
+                        f"Demand_{r}_{p}",
                     )
-                    # ADDED: Force delivery if visited
-                    # If any vehicle visits store i, must deliver product p
-                    visited = lpSum([x[j, i, v] for j in locations for v in vehicles
-                                if i != j and (j, i, v) in x])
-                    
-                    # If visited (visited >= 0.5), then delivery should happen
-                    # But allow unmet if capacity insufficient
-                    model += (
-                        total_delivery >= demand_qty * 0.8 - 10000 * (1 - visited),
-                        f"Force_Delivery_{i}_{p}"
-                    )
-                    
-        # 6. Delivery only if visited (SIMPLIFIED)
-        M = 10000
-        for i in self.stores:
+
+        # 6. Deliver only when visited
+        M_qty = 10_000
+        for r in self.stores:
             for p in self.products:
                 for v in vehicles:
-                    visited = lpSum([x[j, i, v] for j in locations 
-                                    if i != j and (j, i, v) in x])
-                    
-                    model += (
-                        q[i, p, v] <= M * visited,
-                        f"Visit_Delivery_{i}_{p}_{v}"
-                    )
-        
-        print(f"✓ Relaxed VRP built:")
-        print(f"  - Variables: {model.numVariables()}")
-        print(f"  - Constraints: {model.numConstraints()}")
-        print(f"  - Capacity: {adjusted_capacity:.0f} kg/vehicle")
-        
-        return model, {'x': x, 'q': q, 'unmet': unmet}
-    
-    def solve(self, scenario_id: int = None, time_limit: int = 300) -> Tuple[str, Dict]:
-        """Solve VRP"""
-        
-        model, vars_dict = self.build_model(scenario_id)
-        
-        solver = PULP_CBC_CMD(
-            timeLimit=time_limit,
-            gapRel=0.10,  # 10% gap tolerance
-            msg=1
+                    visited = lpSum(arc[i, r, v] for i in locations if i != r)
+                    model += (qty[r, p, v] <= M_qty * visited, f"Vis_{r}_{p}_{v}")
+
+        # 7. MTZ subtour elimination (Miller–Tucker–Zemlin)
+        # t_{ij}(k) = d_{ij} / adjusted_speed
+        T_start = 5.0  # 05:00 departure from depot
+        for v in vehicles:
+            model += (T_mtz[depot, v] == T_start, f"MTZ_dep_{v}")
+
+        for i in locations:
+            for j in self.stores:
+                if i != j:
+                    t_ij = self.distance.get((i, j), 0) / max(adjusted_speed, 1.0)
+                    for v in vehicles:
+                        model += (
+                            T_mtz[j, v]
+                            >= T_mtz[i, v] + t_ij - M_big * (1 - arc[i, j, v]),
+                            f"MTZ_{i}_{j}_{v}",
+                        )
+
+        return model, {"arc": arc, "qty": qty, "unmet": unmet, "T_mtz": T_mtz, "depot": depot}
+
+    # ------------------------------------------------------------------
+    def solve(self, scenario_id: int, time_limit: int = 300) -> Tuple[str, Dict]:
+        """
+        Solve VRP for given scenario.
+
+        [V-1 FIX] Always returns a finite objective value.
+        If solver returns Infeasible or errors, a penalty-only fallback cost is
+        returned so the caller never receives np.inf.
+        """
+        # Compute fallback cost (all demand unmet)
+        sc = self.scenarios[scenario_id]
+        fallback_cost = sum(
+            self.demand.get((r, p), 0) * self.vehicle_config["unmet_penalty_per_unit"]
+            for r in self.stores
+            for p in self.products
         )
-        
-        print(f"\nSolving VRP (time limit: {time_limit}s, gap: 10%)...")
-        start_time = time.time()
-        model.solve(solver)
-        solve_time = time.time() - start_time
-        
+
+        try:
+            model, vars_dict = self.build_model(scenario_id)
+        except Exception as ex:
+            print(f"  ⚠ VRP build failed for scenario {sc.name}: {ex}")
+            return "Fallback", {
+                "objective_value": fallback_cost,
+                "solve_time": 0.0,
+                "status": "Fallback",
+                "routes": [],
+                "unmet_demand": fallback_cost / self.vehicle_config["unmet_penalty_per_unit"],
+            }
+
+        solver = PULP_CBC_CMD(timeLimit=time_limit, gapRel=0.10, msg=0)
+
+        t0 = time.time()
+        try:
+            model.solve(solver)
+        except Exception as ex:
+            print(f"  ⚠ Solver error for {sc.name}: {ex}")
+            return "Fallback", {
+                "objective_value": fallback_cost,
+                "solve_time": time.time() - t0,
+                "status": "Fallback",
+                "routes": [],
+                "unmet_demand": fallback_cost / self.vehicle_config["unmet_penalty_per_unit"],
+            }
+
+        solve_time = time.time() - t0
         status = LpStatus[model.status]
-        print(f"\n✓ Status: {status}")
-        print(f"✓ Solve time: {solve_time:.2f} seconds")
-        
-        if status in ['Optimal', 'Feasible']:
-            obj_value = value(model.objective)
-            print(f"✓ Routing cost: {obj_value:,.0f} VND")
-            
-            # Check unmet demand
-            unmet_total = sum([value(vars_dict['unmet'][i, p]) or 0 
-                              for i in self.stores for p in self.products])
-            
-            if unmet_total > 0.01:
-                print(f"  ⚠️ Unmet demand: {unmet_total:.2f} units")
-            else:
-                print(f"  ✓ All demand satisfied!")
-            
+
+        if status in ("Optimal", "Feasible"):
+            obj = value(model.objective)
+            if obj is None or (not np.isfinite(obj)):
+                # Paranoia guard: should never happen but handle defensively
+                obj = fallback_cost
+
+            unmet_total = sum(
+                value(vars_dict["unmet"][r, p]) or 0
+                for r in self.stores
+                for p in self.products
+            )
+
             solution = self._extract_solution(vars_dict)
-            solution['objective_value'] = obj_value
-            solution['solve_time'] = solve_time
-            solution['status'] = status
-            solution['unmet_demand'] = unmet_total
-            
+            solution.update(
+                {
+                    "objective_value": obj,
+                    "solve_time": solve_time,
+                    "status": status,
+                    "unmet_demand": unmet_total,
+                    "depot": vars_dict["depot"],
+                }
+            )
+            print(f"    ✓ {sc.name}: {obj:,.0f} VND  (unmet={unmet_total:.1f} units, {solve_time:.1f}s)")
             return status, solution
-        else:
-            print(f"⚠ VRP failed: {status}")
-            return status, {}
-    
+
+        # Infeasible / not solved: return finite fallback
+        print(f"    ⚠ VRP infeasible/timeout for {sc.name}; returning fallback cost")
+        return "Fallback", {
+            "objective_value": fallback_cost,
+            "solve_time": solve_time,
+            "status": "Fallback",
+            "routes": [],
+            "unmet_demand": fallback_cost / self.vehicle_config["unmet_penalty_per_unit"],
+        }
+
+    # ------------------------------------------------------------------
     def _extract_solution(self, vars_dict: Dict) -> Dict:
-        """Extract solution"""
-        
-        x = vars_dict['x']
-        q = vars_dict['q']
-        # DEBUG: Check if any routes exist
-        total_arcs = 0
-        for key in x:
-            if value(x[key]) and value(x[key]) > 0.5:
-                total_arcs += 1
-        
-        print(f"\n  [DEBUG] Total active arcs: {total_arcs}")
-        
-        # DEBUG: Check total deliveries
-        total_deliveries = 0
-        for key in q:
-            qty = value(q[key])
-            if qty and qty > 0.01:
-                total_deliveries += qty
-        
-        print(f"  [DEBUG] Total deliveries: {total_deliveries:.2f} units")        
-        
+        arc, qty = vars_dict["arc"], vars_dict["qty"]
+        depot = vars_dict["depot"]
+        vehicles = list(range(self.vehicle_config["num_vehicles"]))
+        locations = [depot] + self.stores
+
         routes = []
-        for v in range(self.vehicle_config['num_vehicles']):
-            route = {'vehicle_id': v, 'stops': []}
-            
-            current = self.depot
-            visited = set([self.depot])
-            
+        for v in vehicles:
+            route_stops = []
+            current = depot
+            visited_set = {depot}
+
             while True:
-                next_stop = None
-                for j in [self.depot] + self.stores:
-                    if j not in visited and (current, j, v) in x:
-                        if value(x[current, j, v]) and value(x[current, j, v]) > 0.5:
-                            next_stop = j
+                nxt = None
+                for j in self.stores:
+                    if j not in visited_set and (current, j, v) in arc:
+                        if (value(arc[current, j, v]) or 0) > 0.5:
+                            nxt = j
                             break
-                
-                if next_stop is None or next_stop == self.depot:
+                if nxt is None:
                     break
-                
-                # Get deliveries
-                deliveries = []
-                for p in self.products:
-                    if (next_stop, p, v) in q:
-                        qty = value(q[next_stop, p, v])
-                        if qty and qty > 0.01:
-                            deliveries.append({
-                                'product_id': p,
-                                'quantity': round(qty, 2)
-                            })
-                
-                if deliveries:  # Only add stop if deliveries
-                    route['stops'].append({
-                        'location': next_stop,
-                        'deliveries': deliveries
-                    })
-                
-                visited.add(next_stop)
-                current = next_stop
-            
-            if route['stops']:
-                routes.append(route)
-        
-        return {'routes': routes}
+                deliveries = [
+                    {"product_id": p, "quantity": round(value(qty[nxt, p, v]) or 0, 2)}
+                    for p in self.products
+                    if (value(qty[nxt, p, v]) or 0) > 0.01
+                ]
+                if deliveries:
+                    route_stops.append({"location": nxt, "deliveries": deliveries})
+                visited_set.add(nxt)
+                current = nxt
 
+            if route_stops:
+                routes.append({"vehicle_id": v, "depot": depot, "stops": route_stops})
 
-# Test code
-if __name__ == "__main__":
-    import sys
-    import os
-    
-    current_dir = os.path.dirname(os.path.abspath(__file__))
-    project_root = os.path.abspath(os.path.join(current_dir, '..', '..'))
-    sys.path.insert(0, project_root)
-    sys.path.insert(0, os.path.join(project_root, 'src'))
-    
-    from data_generation.network_generator import DaNangNetworkGenerator
-    from data_generation.product_generator import ProductCatalogGenerator
-    from data_generation.demand_generator import DemandPatternGenerator
-    from weather.manual_scenarios import ManualWeatherScenarios
-    
-    print("="*80)
-    print("WEATHER-AWARE VRP - RELAXED VERSION TEST")
-    print("="*80)
-    
-    # Generate data
-    network_gen = DaNangNetworkGenerator(seed=42)
-    network = network_gen.generate_network(n_suppliers=6, n_dcs=2, n_stores=4)
-    
-    product_gen = ProductCatalogGenerator(seed=42)
-    products = product_gen.generate_products(n_products=5)
-    
-    demand_gen = DemandPatternGenerator(seed=42)
-    daily_demand = demand_gen.generate_demand_plan(
-        network['stores'], products, planning_horizon_days=7
-    )
-    weekly_demand = demand_gen.aggregate_to_weekly(daily_demand)
-    
-    procurement = pd.DataFrame({
-        'supplier_id': ['SUP_001'] * 5,
-        'product_id': products['id'].tolist(),
-        'quantity_units': [200] * 5  # Enough supply
-    })
-    
-    scenarios = ManualWeatherScenarios.create_monsoon_season_scenarios()
-    
-    # Test VRP
-    vrp = WeatherAwareVRP(
-        network=network,
-        products_df=products,
-        demand_df=weekly_demand,
-        procurement_solution=procurement,
-        weather_scenarios=scenarios,
-        vehicle_config={'num_vehicles': 5}
-    )
-    
-    # Test multiple scenarios
-    for k in [0, 2, 4]:  # Normal, Moderate, Typhoon
-        scenario = scenarios[k]
-        print(f"\n{'='*80}")
-        print(f"Testing Scenario: {scenario.name}")
-        print(f"{'='*80}")
-        
-        status, solution = vrp.solve(scenario_id=k, time_limit=180)
-        
-        if status in ['Optimal', 'Feasible']:
-            print(f"\n✓ Solution found!")
-            
-            # ADDED: Print detailed routes
-            print(f"\n{'='*60}")
-            print("ROUTING DETAILS:")
-            print(f"{'='*60}")
-            
-            if solution['routes']:
-                for route in solution['routes']:
-                    print(f"\nVehicle {route['vehicle_id']}:")
-                    if route['stops']:
-                        total_delivered = 0
-                        for stop in route['stops']:
-                            deliveries_str = []
-                            for d in stop['deliveries']:
-                                deliveries_str.append(f"{d['product_id']}: {d['quantity']} units")
-                                total_delivered += d['quantity']
-                            
-                            print(f"  → {stop['location']}")
-                            for ds in deliveries_str:
-                                print(f"      {ds}")
-                        
-                        print(f"  Total delivered by this vehicle: {total_delivered:.0f} units")
-                    else:
-                        print(f"  → NO STOPS (vehicle not used)")
-            else:
-                print("\n⚠️ NO ROUTES FOUND!")
-            
-            print(f"\n{'='*60}")
-            print(f"Total unmet demand: {solution['unmet_demand']:.0f} units")
-            print(f"{'='*60}")
+        return {"routes": routes}
