@@ -149,7 +149,7 @@ def main():
     print("\n" + "-" * 80)
     print("STEP 6: Computing WS (M-2 fix — K separate deterministic solves)")
     print("-" * 80)
-
+    
     ws, ws_breakdown = validator.compute_ws(
         scenarios=scenarios,
         network=network,
