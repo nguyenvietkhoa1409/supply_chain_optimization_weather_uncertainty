@@ -231,6 +231,7 @@ class StochasticValidator:
         supplier_product_df: pd.DataFrame,
         demand_df: pd.DataFrame,
         time_limit_per_scenario: int = 300,
+        vehicle_config: Dict = None,          # NEW
     ) -> Tuple[float, pd.DataFrame]:
         """
         Compute WS = Wait-and-See cost = Σ_k p_k · OPT_k.
@@ -261,126 +262,71 @@ class StochasticValidator:
         Returns
         ───────
         (ws_total, per_scenario_df)
+        Uses ExtensiveFormOptimizer with a single scenario (K=1, probability=1.0).
         """
+        import copy
+        from optimization.extensive_form_optimizer import ExtensiveFormOptimizer
+
         if self.verbose:
-            print("\nComputing WS (M-2 fix: K separate deterministic solves)…")
+            print("\nComputing WS (M-2 fix: K separate extensive-form solves, procurement + VRP)…")
             print(f"  Running {len(scenarios)} separate optimizations…")
-
-        product_cost = dict(zip(products_df["id"], products_df["unit_cost_vnd"]))
-        product_weight = dict(zip(products_df["id"], products_df["weight_kg_per_unit"]))
-        supplier_capacity = dict(
-            zip(network["suppliers"]["id"], network["suppliers"]["capacity_kg_per_day"])
-        )
-        supplier_fixed_cost = dict(
-            zip(network["suppliers"]["id"], network["suppliers"]["fixed_cost_vnd"])
-        )
-        supplier_subtype = {
-            row["id"]: row.get("subtype", "general")
-            for _, row in network["suppliers"].iterrows()
-        }
-
-        sp_cost, sp_moq, sp_avail = {}, {}, {}
-        for _, row in supplier_product_df.iterrows():
-            s, p = row["supplier_id"], row["product_id"]
-            sp_cost[(s, p)] = row["unit_cost_vnd"]
-            sp_moq[(s, p)] = row["moq_units"]
-            sp_avail[(s, p)] = row["available"]
-
-        total_demand = demand_df.groupby("product_id")["demand_units"].sum().to_dict()
-        suppliers = network["suppliers"]["id"].tolist()
-        products = products_df["id"].tolist()
 
         rows = []
         for k, sc in enumerate(scenarios):
             t0 = time.time()
-            m = LpProblem(f"WS_k{k}", LpMinimize)
 
-            # Stage 1 variables
-            x = LpVariable.dicts(f"x_k{k}", ((s, p) for s in suppliers for p in products), lowBound=0)
-            y = LpVariable.dicts(f"y_k{k}", ((s, p) for s in suppliers for p in products), cat="Binary")
-            e = LpVariable.dicts(f"e_k{k}", products, lowBound=0)
-            u = LpVariable.dicts(f"u_k{k}", products, lowBound=0)
+            # Clone scenario với probability=1.0 (perfect information — chỉ có 1 scenario)
+            sc_single = copy.deepcopy(sc)
+            sc_single.probability = 1.0
 
-            # Under perfect info, only accessible suppliers are available for procurement
-            acc_set = {
-                (s, p)
-                for s in suppliers
-                for p in products
-                if sp_avail.get((s, p), False)
-                and sc.get_supplier_accessible(supplier_subtype.get(s, "general")) == 1
-            }
-
-            procurement_cost = lpSum(
-                sp_cost.get((s, p), product_cost[p]) * x[s, p]
-                for s, p in acc_set
-            )
-            fixed_cost_term = lpSum(
-                supplier_fixed_cost[s] * y[s, p]
-                for s, p in acc_set
-            )
-            em_penalty = 0.40
-            penalty_mult = min(10.0, 5.0 * sc.spoilage_multiplier)
-            recourse_cost = lpSum(
-                2.0 * product_cost[p] * e[p] + penalty_mult * product_cost[p] * u[p]
-                for p in products
+            optimizer = ExtensiveFormOptimizer(
+                network=network,
+                products_df=products_df,
+                supplier_product_df=supplier_product_df,
+                demand_df=demand_df,
+                weather_scenarios=[sc_single],   # K=1
+                vehicle_config=vehicle_config,
+                risk_aversion=0.0,               # risk-neutral cho WS
             )
 
-            m += procurement_cost + fixed_cost_term + recourse_cost
+            status, solution = optimizer.solve(
+                time_limit=time_limit_per_scenario,
+                gap_tolerance=0.05,
+            )
 
-            # Constraints
-            M_big = 100_000
-            for s in suppliers:
-                m += (
-                    lpSum(x[s, p] * product_weight[p] for p in products if sp_avail.get((s, p), False))
-                    <= supplier_capacity[s],
-                    f"Cap_{k}_{s}",
-                )
-            for s, p in acc_set:
-                moq = sp_moq.get((s, p), 0)
-                m += (x[s, p] >= moq * y[s, p], f"MOQlo_{k}_{s}_{p}")
-                m += (x[s, p] <= M_big * y[s, p], f"MOQhi_{k}_{s}_{p}")
-
-            for p in products:
-                d = total_demand.get(p, 0)
-                if d > 0:
-                    acc_supply = lpSum(x[s, p] for s in suppliers if (s, p) in acc_set)
-                    em_cap = em_penalty * d * (1 if sc.emergency_feasible else 0)
-                    m += (e[p] <= em_cap, f"EmCap_{k}_{p}")
-                    m += (acc_supply + e[p] + u[p] >= d, f"Dem_{k}_{p}")
-
-            m.solve(PULP_CBC_CMD(msg=0, timeLimit=time_limit_per_scenario))
-            solve_t = time.time() - t0
-
-            if LpStatus[m.status] in ("Optimal", "Feasible"):
-                opt_k = value(m.objective) or 0
+            if status in ("Optimal", "Feasible"):
+                opt_k = solution["objective_value"]
             else:
-                # If infeasible (shouldn't happen with unmet), use large penalty estimate
-                opt_k = sum(
-                    total_demand.get(p, 0) * penalty_mult * product_cost.get(p, 0)
-                    for p in products
-                )
+                # Fallback: penalty-only estimate nếu solver fail
+                total_demand = demand_df.groupby("product_id")["demand_units"].sum()
+                penalty_mult = min(10.0, 5.0 * sc.spoilage_multiplier)
+                opt_k = float(sum(
+                    total_demand.get(p, 0) * penalty_mult
+                    * products_df.loc[products_df["id"] == p, "unit_cost_vnd"].values[0]
+                    for p in products_df["id"]
+                ))
                 if self.verbose:
-                    print(f"  k={k} [{sc.name}] solver status={LpStatus[m.status]} → fallback cost")
+                    print(f"  k={k:2d} [{sc.name}] solver failed ({status}) → fallback")
 
-            rows.append(
-                {
-                    "scenario_name": sc.name,
-                    "severity_level": sc.severity_level,
-                    "probability": sc.probability,
-                    "opt_k": opt_k,
-                    "solve_time": solve_t,
-                }
-            )
+            elapsed = time.time() - t0
+            rows.append({
+                "scenario_name": sc.name,
+                "severity_level": sc.severity_level,
+                "probability": sc.probability,
+                "opt_k": opt_k,
+                "solve_time": elapsed,
+            })
             if self.verbose:
-                print(f"  k={k:2d} [{sc.name}]: OPT_k = {opt_k:,.0f} VND  ({solve_t:.1f}s)")
+                print(f"  k={k:2d} [{sc.name}]: OPT_k = {opt_k:,.0f} VND  ({elapsed:.1f}s)")
 
         df = pd.DataFrame(rows)
         ws = (df["opt_k"] * df["probability"]).sum()
 
         if self.verbose:
-            print(f"\n  WS = {ws:,.0f} VND  (Σ p_k · OPT_k)")
+            print(f"\n  WS = {ws:,.0f} VND  (Σ p_k · OPT_k, full procurement+VRP)")
 
         return ws, df
+
 
     # ------------------------------------------------------------------
     def compute_vss(self, rp: float, eev: float) -> Dict:

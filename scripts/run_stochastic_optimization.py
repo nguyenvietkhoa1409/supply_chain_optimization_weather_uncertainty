@@ -33,6 +33,16 @@ from optimization.deterministic_baseline import DeterministicBaselineModel
 from evaluation.vss_evpi_calculator import StochasticValidator
 
 
+VEHICLE_CONFIG = {
+    "num_vehicles": 3,
+    "capacity_kg": 1000,
+    "base_speed_kmh": 40,
+    "cost_per_km": 5000,
+    "cost_per_hour": 50000,
+    "max_route_time_hours": 10,
+}
+
+
 def main():
     print("=" * 80)
     print("WEATHER-AWARE STOCHASTIC OPTIMIZATION  (FIXED PIPELINE)")
@@ -90,9 +100,7 @@ def main():
         supplier_product_df=supplier_product,
         demand_df=weekly_demand,
         weather_scenarios=scenarios,
-        vehicle_config={"num_vehicles": 3, "capacity_kg": 1000,
-                        "base_speed_kmh": 40, "cost_per_km": 5000,
-                        "cost_per_hour": 50000, "max_route_time_hours": 10},
+        vehicle_config=VEHICLE_CONFIG,
         risk_aversion=0.0,
         baseline_ratio=0.70,
     )
@@ -157,6 +165,8 @@ def main():
         supplier_product_df=supplier_product,
         demand_df=weekly_demand,
         time_limit_per_scenario=300,
+        vehicle_config = VEHICLE_CONFIG
+        
     )
 
     # ── STEP 7: Report [M-3 fix] ─────────────────────────────────────────────

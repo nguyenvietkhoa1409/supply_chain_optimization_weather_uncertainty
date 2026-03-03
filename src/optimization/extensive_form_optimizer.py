@@ -253,7 +253,7 @@ class ExtensiveFormOptimizer:
                     T_mtz[k, j, v] = LpVariable(f"T_{k}_{j}_{v}", lowBound=0, upBound=M_big)
 
         # CVaR variables
-        if self.risk_aversion > 0:
+        if self.risk_aversion > 0 and len(self.scenarios) > 1:
             eta = LpVariable("eta", lowBound=0)
             zeta = LpVariable.dicts("zeta", range(K), lowBound=0)
         else:
