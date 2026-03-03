@@ -12,8 +12,8 @@ data/scenarios/**/*.csv
 data/scenarios/**/*.json
 
 # Results (generated)
-results/**/*.csv
-results/**/*.json
+# results/**/*.csv
+# results/**/*.json
 logs/**/*.log
 
 # IDE
