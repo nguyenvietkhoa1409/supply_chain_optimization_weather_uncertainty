@@ -5,9 +5,9 @@ STOCHASTIC OPTIMIZATION VALIDATION REPORT  (Fixed: M-1, M-2, M-3)
 1. VALUE OF STOCHASTIC SOLUTION (VSS)
 --------------------------------------------------------------------------------
   EEV  (Expected cost of EV solution):        4,841,091,765 VND
-  RP   (Stochastic recourse problem):         3,864,432,797 VND
-  VSS  = EEV - RP:                              976,658,967 VND
-  VSS%:                                               20.17%
+  RP   (Stochastic recourse problem):         3,867,873,006 VND
+  VSS  = EEV - RP:                              973,218,758 VND
+  VSS%:                                               20.10%
 
   → Substantial benefit — stochastic approach essential
 
@@ -16,10 +16,10 @@ STOCHASTIC OPTIMIZATION VALIDATION REPORT  (Fixed: M-1, M-2, M-3)
 
 2. EXPECTED VALUE OF PERFECT INFORMATION (EVPI)
 --------------------------------------------------------------------------------
-  RP   (Stochastic solution):                 3,864,432,797 VND
-  WS   (Wait-and-see, K solves):              3,398,054,350 VND
-  EVPI = RP - WS:                               466,378,447 VND
-  EVPI%:                                              12.07%
+  RP   (Stochastic solution):                 3,867,873,006 VND
+  WS   (Wait-and-see, K solves):              3,402,847,494 VND
+  EVPI = RP - WS:                               465,025,512 VND
+  EVPI%:                                              12.02%
 
   → Very high value — perfect forecasts highly valuable
 
@@ -28,24 +28,24 @@ STOCHASTIC OPTIMIZATION VALIDATION REPORT  (Fixed: M-1, M-2, M-3)
 
 3. ORDERING PROPERTY  (WS ≤ RP ≤ EEV)
 --------------------------------------------------------------------------------
-  WS  =        3,398,054,350 VND
-  RP  =        3,864,432,797 VND
+  WS  =        3,402,847,494 VND
+  RP  =        3,867,873,006 VND
   EEV =        4,841,091,765 VND
   WS ≤ RP:   ✓ PASS
   RP ≤ EEV:  ✓ PASS
 
 4. SCENARIO-WISE COST BREAKDOWN  (Recourse Problem)
 --------------------------------------------------------------------------------
-  Normal Monsoon Day              p=0.30  cost= 2,709,023,904 VND
-  Light Rain                      p=0.25  cost= 2,708,888,086 VND
-  Moderate Rain                   p=0.20  cost= 2,708,872,752 VND
-  Heavy Rain                      p=0.15  cost= 5,266,657,971 VND
-  Tropical Storm/Typhoon          p=0.10  cost=10,427,303,585 VND
+  Normal Monsoon Day              p=0.30  cost= 2,710,708,333 VND
+  Light Rain                      p=0.25  cost= 2,710,425,805 VND
+  Moderate Rain                   p=0.20  cost= 2,713,962,895 VND
+  Heavy Rain                      p=0.15  cost= 5,277,085,044 VND
+  Tropical Storm/Typhoon          p=0.10  cost=10,426,987,196 VND
 
-  Mean:   4,764,149,260 VND
-  Worst: 10,427,303,585 VND
-  Best:   2,708,872,752 VND
-  CV:    70.40%
+  Mean:   4,767,833,855 VND
+  Worst: 10,426,987,196 VND
+  Best:   2,710,425,805 VND
+  CV:    70.32%
 
 5. EEV BREAKDOWN BY SCENARIO
 --------------------------------------------------------------------------------
@@ -57,16 +57,16 @@ STOCHASTIC OPTIMIZATION VALIDATION REPORT  (Fixed: M-1, M-2, M-3)
 
 6. WAIT-AND-SEE (WS) BREAKDOWN BY SCENARIO
 --------------------------------------------------------------------------------
-  Normal Monsoon Day              p=0.30  OPT_k= 2,340,889,805 VND  (1.5s)
-  Light Rain                      p=0.25  OPT_k= 2,340,903,647 VND  (1.1s)
-  Moderate Rain                   p=0.20  OPT_k= 2,340,900,262 VND  (1.1s)
-  Heavy Rain                      p=0.15  OPT_k= 4,319,692,613 VND  (0.5s)
-  Tropical Storm/Typhoon          p=0.10  OPT_k= 9,944,275,521 VND  (0.8s)
+  Normal Monsoon Day              p=0.30  OPT_k= 2,345,367,385 VND  (0.8s)
+  Light Rain                      p=0.25  OPT_k= 2,342,463,324 VND  (0.8s)
+  Moderate Rain                   p=0.20  OPT_k= 2,346,332,984 VND  (0.9s)
+  Heavy Rain                      p=0.15  OPT_k= 4,333,056,402 VND  (0.8s)
+  Tropical Storm/Typhoon          p=0.10  OPT_k= 9,943,963,909 VND  (0.1s)
 
 ================================================================================
 CONCLUSION
 ================================================================================
 ✓ Stochastic solution has SUBSTANTIAL value over deterministic
-✓ Weather forecasting has VERY HIGH value (12.1%) — invest in monitoring
+✓ Weather forecasting has VERY HIGH value (12.0%) — invest in monitoring
 ✓ Ordering property WS ≤ RP ≤ EEV verified — model is consistent
 ================================================================================

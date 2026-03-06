@@ -3,7 +3,7 @@
     "scenario_id": 1,
     "name": "Clear/Sunny",
     "severity_level": 1,
-    "description": "Typical dry season day - clear skies, hot temperature",
+    "description": "Typical dry season day \u2013 clear skies, hot temperature",
     "rainfall_mm_per_day": 0.0,
     "temperature_celsius": 32.0,
     "wind_speed_kmh": 15.0,
@@ -11,13 +11,20 @@
     "capacity_reduction_factor": 1.0,
     "spoilage_multiplier": 1.2,
     "road_closure_probability": 0.0,
-    "probability": 0.6
+    "probability": 0.6,
+    "supplier_accessibility": {
+      "seafood": 1,
+      "vegetables": 1,
+      "meat": 1,
+      "general": 1
+    },
+    "emergency_feasible": true
   },
   {
     "scenario_id": 2,
     "name": "Hot & Humid",
     "severity_level": 2,
-    "description": "Extreme heat day (>35\u00b0C) with high humidity",
+    "description": "Extreme heat day (>35 \u00b0C) with high humidity",
     "rainfall_mm_per_day": 2.0,
     "temperature_celsius": 36.0,
     "wind_speed_kmh": 12.0,
@@ -25,7 +32,14 @@
     "capacity_reduction_factor": 0.95,
     "spoilage_multiplier": 1.4,
     "road_closure_probability": 0.0,
-    "probability": 0.25
+    "probability": 0.25,
+    "supplier_accessibility": {
+      "seafood": 1,
+      "vegetables": 1,
+      "meat": 1,
+      "general": 1
+    },
+    "emergency_feasible": true
   },
   {
     "scenario_id": 3,
@@ -39,6 +53,13 @@
     "capacity_reduction_factor": 0.92,
     "spoilage_multiplier": 1.1,
     "road_closure_probability": 0.01,
-    "probability": 0.15
+    "probability": 0.15,
+    "supplier_accessibility": {
+      "seafood": 1,
+      "vegetables": 1,
+      "meat": 1,
+      "general": 1
+    },
+    "emergency_feasible": true
   }
 ]

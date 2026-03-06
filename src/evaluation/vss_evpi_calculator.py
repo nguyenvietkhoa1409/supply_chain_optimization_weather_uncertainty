@@ -231,7 +231,8 @@ class StochasticValidator:
         supplier_product_df: pd.DataFrame,
         demand_df: pd.DataFrame,
         time_limit_per_scenario: int = 300,
-        vehicle_config: Dict = None,          # NEW
+        vehicle_config: Optional[Dict] = None, 
+        fleet_instances: Optional[Dict] = None,
     ) -> Tuple[float, pd.DataFrame]:
         """
         Compute WS = Wait-and-See cost = Σ_k p_k · OPT_k.
@@ -286,6 +287,7 @@ class StochasticValidator:
                 demand_df=demand_df,
                 weather_scenarios=[sc_single],   # K=1
                 vehicle_config=vehicle_config,
+                fleet_instances=fleet_instances,
                 risk_aversion=0.0,               # risk-neutral cho WS
             )
 
