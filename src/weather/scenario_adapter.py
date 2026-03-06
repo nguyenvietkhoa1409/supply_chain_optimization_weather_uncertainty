@@ -30,8 +30,24 @@ logger = logging.getLogger(__name__)
 
 
 class DataDrivenWeatherScenario(GeneratedWeatherScenario):
-    """Thin subclass satisfying isinstance(sc, WeatherScenario) checks."""
-    pass
+    """Thin subclass satisfying isinstance checks for WeatherScenario-typed code."""
+
+    # ── Attribute aliases để tương thích với manual_scenarios.py ──────────
+    @property
+    def temperature_celsius(self) -> float:
+        return self.temperature_c
+
+    @property
+    def rainfall_mm_per_day(self) -> float:
+        return self.rainfall_mm
+
+    @property
+    def wind_speed_kmh(self) -> float:
+        return self.wind_kmh
+
+    @property
+    def road_closure_probability(self) -> float:
+        return self.road_closure_prob
 
 
 def get_data_driven_scenarios(

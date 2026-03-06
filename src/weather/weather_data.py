@@ -153,7 +153,9 @@ class DaNangWeatherData:
             logger.info(f"✓ {len(df)} records ({len(df)/365:.1f} years)")
             if self.cache_dir:
                 self.cache_dir.mkdir(parents=True, exist_ok=True)
+                df["_source"] = "api"
                 df.to_csv(self.cache_dir / f"danang_{start_date}_{end_date}.csv", index=False)
+                
         except Exception as exc:
             logger.warning(f"API unavailable ({exc.__class__.__name__}) — using synthetic data")
             df = self._build_synthetic_raw_df(start_date, end_date)
