@@ -1,27 +1,13 @@
 """
 weather_data.py — Da Nang Historical Weather Data & Distribution Fitting
-═══════════════════════════════════════════════════════════════════════════
+FIXED VERSION
 
-Step 1 of the data-driven scenario generation pipeline.
-
-Scientific approach
-───────────────────
-1. Fetch 10+ years of daily weather from Open-Meteo Historical API
-   (ERA5 reanalysis, free, no auth, 16.068°N 108.221°E).
-2. Separate into two seasons:
-     Dry season    : Feb–Aug  (heat-driven spoilage risk)
-     Monsoon season: Sep–Jan  (rainfall / typhoon disruption risk)
-3. Fit probability distributions by season:
-     Rainfall  : Gamma(α, β) — standard hydrology model (Thom 1958).
-                 Fitted on rainy days only (>0.1mm) to avoid zero-inflation
-                 distorting shape parameter. Zero-day probability stored separately.
-     Temperature: Normal(μ, σ)
-     Wind speed : Weibull(k, λ) — extreme value theory for wind (Justus 1978)
-4. Goodness-of-fit: KS effect size (stat / critical_value) rather than p-value.
-   With n>500, KS power is near-perfect — even excellent Gamma fits yield p<0.05
-   due to minor sampling variation. Effect size ratio < 2.0 = excellent fit;
-   fallback to embedded params only when ratio > 4.0 (poor fit).
-5. Offline fallback: embedded Da Nang climate statistics (WMO 48855, 2014–2023).
+Bug fixes applied:
+  [FIX-1] Cache loading path now sets df.attrs["source"] = "api" by checking
+           the _source column saved by the API path. Fixes KeyError on df.attrs['source'].
+  [FIX-2] fit_seasonal_distributions() now detects source from BOTH attrs AND
+           _source column in DataFrame, so distributions saved with correct source label
+           even when loaded from CSV cache (which doesn't preserve attrs).
 """
 
 from __future__ import annotations
@@ -40,7 +26,7 @@ DANANG_LON = 108.221
 OPEN_METEO_URL = "https://archive-api.open-meteo.com/v1/archive"
 MONSOON_MONTHS = {9, 10, 11, 12, 1}
 DRY_MONTHS     = {2, 3, 4, 5, 6, 7, 8}
-KS_FALLBACK_RATIO = 4.0   # fallback only when KS_stat > 4 × critical(5%)
+KS_FALLBACK_RATIO = 4.0
 
 EMBEDDED_DISTRIBUTIONS: Dict[str, Dict] = {
     "dry": {
@@ -77,7 +63,7 @@ class SeasonalDistributions:
     rain_zero_day_prob: float = 0.0
     rain_ks_stat: float = 0.0
     rain_ks_critical: float = 0.0
-    rain_ks_ratio: float = 0.0    # stat/critical; < 2 excellent, < 4 good, > 4 poor
+    rain_ks_ratio: float = 0.0
     rain_ks_pvalue: float = 0.0
     temp_loc: float = 0.0
     temp_scale: float = 0.0
@@ -114,16 +100,44 @@ class DaNangWeatherData:
         self.cache_dir = Path(cache_dir) if cache_dir else None
         self._timeout = request_timeout
 
+    # ── [FIX-1] Helper: detect data source from DataFrame ─────────────────
+    @staticmethod
+    def _detect_source(df: pd.DataFrame) -> str:
+        """
+        Detect whether a DataFrame originated from the API or synthetic generation.
+
+        Priority order:
+          1. df.attrs["source"]  — set in-memory by API/synthetic path (lost after CSV round-trip)
+          2. df["_source"] column — persisted to CSV only by the API save path
+          3. Fallback: "unknown"
+        """
+        # In-memory attrs (reliable when not loaded from CSV)
+        if df.attrs.get("source") in ("api", "synthetic"):
+            return df.attrs["source"]
+        # Column persisted to CSV by API path: df["_source"] = "api"
+        if "_source" in df.columns:
+            unique_vals = df["_source"].dropna().unique()
+            if "api" in unique_vals:
+                return "api"
+        return "unknown"
+
     def fetch_historical_data(
         self, start_date: str = "2014-01-01", end_date: str = "2023-12-31",
         use_cache: bool = True
     ) -> pd.DataFrame:
         """Fetch daily ERA5 reanalysis data from Open-Meteo (free, no auth)."""
+
+        # ── [FIX-1] Cache path: set attrs from _source column ─────────────
         if use_cache and self.cache_dir:
             cf = self.cache_dir / f"danang_{start_date}_{end_date}.csv"
             if cf.exists():
                 logger.info(f"Loading cached data: {cf}")
-                self.raw_df = pd.read_csv(cf, parse_dates=["date"])
+                df = pd.read_csv(cf, parse_dates=["date"])
+                # Detect and restore source tag lost during CSV serialisation
+                detected = self._detect_source(df)
+                df.attrs["source"] = detected
+                logger.info(f"  Cache source detected: {detected} ({len(df)} records)")
+                self.raw_df = df
                 return self.raw_df
 
         try:
@@ -153,12 +167,13 @@ class DaNangWeatherData:
             logger.info(f"✓ {len(df)} records ({len(df)/365:.1f} years)")
             if self.cache_dir:
                 self.cache_dir.mkdir(parents=True, exist_ok=True)
-                df["_source"] = "api"
+                df["_source"] = "api"   # persist source tag to CSV
                 df.to_csv(self.cache_dir / f"danang_{start_date}_{end_date}.csv", index=False)
-                
+
         except Exception as exc:
             logger.warning(f"API unavailable ({exc.__class__.__name__}) — using synthetic data")
             df = self._build_synthetic_raw_df(start_date, end_date)
+
         self.raw_df = df
         return df
 
@@ -198,13 +213,19 @@ class DaNangWeatherData:
     def fit_seasonal_distributions(self) -> Dict[str, SeasonalDistributions]:
         """
         Fit Gamma/Normal/Weibull distributions by season.
-        Uses KS effect-size (stat/critical) for fit assessment — not raw p-value —
-        because large n (>500) makes p-value an unreliable quality indicator.
+        [FIX-2] Source detection now uses _detect_source() covering both
+                df.attrs and the _source column — fixes wrong "synthetic" label
+                when data was loaded from CSV cache.
         """
         if self.raw_df is None:
             raise ValueError("No data — call fetch_historical_data() first")
         results = {}
-        is_api = self.raw_df.attrs.get("source") == "api"
+
+        # ── [FIX-2] Robust source detection ───────────────────────────────
+        detected_source = self._detect_source(self.raw_df)
+        is_api = (detected_source == "api")
+        logger.info(f"Distribution fitting: data source = '{detected_source}' "
+                    f"(is_api={is_api})")
 
         for season in ["dry", "monsoon"]:
             sub = self.raw_df[self.raw_df["season"] == season].copy()
@@ -216,7 +237,7 @@ class DaNangWeatherData:
                 source="api" if is_api else "synthetic",
             )
 
-            # Rainfall — Gamma on rainy days, zero-day prob separate
+            # Rainfall — Gamma on rainy days
             rain_all = sub["rainfall_mm"].values
             rainy    = rain_all[rain_all > 0.1]
             d.n_rainy           = len(rainy)
@@ -350,6 +371,7 @@ class DaNangWeatherData:
         lines.append("="*72)
         return "\n".join(lines)
 
+
 # Patch: robust loader that ignores unknown/missing fields
 def _load_distributions_robust(self, path: str):
     import dataclasses
@@ -361,6 +383,5 @@ def _load_distributions_robust(self, path: str):
     }
     return self.distributions
 
-# Monkey-patch to instance method
 import types
 DaNangWeatherData.load_distributions = _load_distributions_robust

@@ -1,27 +1,23 @@
-import pandas as pd
+import sys
+sys.path.insert(0, "src")
+import logging
+logging.basicConfig(level=logging.INFO, format="%(message)s")
 
-df = pd.read_csv("data/weather_cache/danang_2014-01-01_2023-12-31.csv", 
-                 parse_dates=["date"])
+from weather.weather_data import DaNangWeatherData
 
-print("=== VALIDATION ===")
-print(f"Total records: {len(df)}")
-print(f"Date range: {df['date'].min()} → {df['date'].max()}")
-print(f"Expected: 2014-01-01 → 2023-12-31 ({365*10} days ~= 3650)")
-print()
+wd = DaNangWeatherData(cache_dir="data/weather_cache")
 
-# Kiểm tra tháng 10 - đây là tháng mưa nhiều nhất Đà Nẵng
-oct_data = df[df['date'].dt.month == 10]
-print(f"October mean rainfall: {oct_data['rainfall_mm'].mean():.1f} mm/day")
-print(f"Expected từ literature: ~21 mm/day (650mm/30days)")
-print()
+# Fetch fresh từ Open-Meteo API (bỏ qua cache vì đã rename)
+df = wd.fetch_historical_data("2014-01-01", "2023-12-31", use_cache=False)
 
-# Kiểm tra ngày typhoon cụ thể đã biết
-# Bão Noru đổ bộ Đà Nẵng 27/09/2022
-noru = df[df['date'] == '2022-09-27']
-print(f"Bão Noru (27/09/2022): {noru['rainfall_mm'].values} mm")
-print(f"Expected: >100mm nếu là real ERA5 data")
-print()
+print(f"\nSource: {df.attrs['source']}")
+print(f"Records: {len(df)}")
+assert df.attrs["source"] == "api", "API call failed — kiểm tra internet"
+assert len(df) >= 3650, "Thiếu records"
 
-# Kiểm tra wind speed trong typhoon
-print(f"Max wind ever recorded: {df['wind_max_kmh'].max():.1f} km/h")
-print(f"Expected: >80 km/h nếu có typhoon events")
+# Fit và save distributions với source=api đúng
+wd.fit_seasonal_distributions()
+wd.save_distributions("data/danang_distribution_parameters.json")
+
+print("\n" + wd.summary())
+print("\n✓ DONE — danang_distribution_parameters.json đã được regenerate từ real data")
