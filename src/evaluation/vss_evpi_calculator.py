@@ -134,6 +134,10 @@ class StochasticValidator:
 
         rows = []
         for k, sc in enumerate(scenarios):
+            DISRUPTION_PREMIUM = {1: 1.00, 2: 1.00, 3: 1.15, 4: 1.40, 5: 2.00}
+            prem = DISRUPTION_PREMIUM.get(sc.severity_level, 1.0)
+            cap_f = sc.capacity_reduction_factor
+            sp_m = sc.spoilage_multiplier
             # Accessible supply under this scenario
             accessible_supply = {}
             spoilage_loss = {}
@@ -157,7 +161,7 @@ class StochasticValidator:
                     if sc.get_supplier_accessible(supplier_subtype.get(s, "general")) == 0
                     and sp_avail.get((s, p), False)
                 )
-                spoilage_loss[p] = inacc_cost
+                spoilage_loss[p] = inacc_cost * sp_m
 
             # Solve Stage 2 recourse (small LP)
             products = products_df["id"].tolist()
@@ -165,10 +169,10 @@ class StochasticValidator:
             e = LpVariable.dicts(f"e_k{k}", products, lowBound=0)
             u = LpVariable.dicts(f"u_k{k}", products, lowBound=0)
 
-            em_ratio = 0.40
+            em_ratio = 0.30
             for p in products:
                 d = total_demand.get(p, 0)
-                em_cap = em_ratio * d * (1 if sc.emergency_feasible else 0)
+                em_cap = em_ratio * d * cap_f * (1 if sc.emergency_feasible else 0)
                 m2 += (e[p] <= em_cap, f"em_cap_{k}_{p}")
 
                 if d > 0:
@@ -178,7 +182,7 @@ class StochasticValidator:
                     )
 
             # penalty_mult = min(10.0, 5.0 * sc.spoilage_multiplier)
-            penalty_mult = 5.0 # fixed: lost sale + customer dissatisfaction only
+            penalty_mult = 5.0 * prem
             m2 += lpSum(
                 2.0 * product_cost[p] * e[p] + penalty_mult * product_cost[p] * u[p]
                 for p in products
@@ -551,6 +555,159 @@ class StochasticValidator:
             return "High value — invest in weather monitoring systems"
         else:
             return "Very high value — perfect forecasts highly valuable"
+    
+    @staticmethod
+    def compute_cvar_metrics(
+        scenario_costs: List[Tuple],  # list of (probability, cost) hoặc (prob, cost, name)
+        alpha:          float = 0.95,
+        lambda_weight:  float = 0.30,
+    ) -> Dict:
+        """
+        [FIX-C1] Compute CVaR-α và risk-adjusted objective từ RP scenario distribution.
+
+        Scientific rationale
+        ────────────────────
+        CV = 69.45% trong kết quả hiện tại — rất high. Expected cost (mean) là
+        misleading metric khi distribution có fat tail như thế này. Risk-averse
+        decision-makers (city-level food security planners) quan tâm đến:
+        - VaR_α: cost sẽ không vượt quá bao nhiêu với xác suất α
+        - CVaR_α: expected cost trong worst (1-α) × 100% scenarios
+
+        Formulation (Rockafellar & Uryasev 2000):
+        VaR_α  = inf{η : F(η) ≥ α}
+        CVaR_α = η* + 1/(1-α) · Σ_k p_k · max(cost_k - η*, 0)
+                = E[cost | cost ≥ VaR_α]  (for continuous distributions)
+
+        Risk-adjusted objective:
+        ρ_λ = (1-λ) · E[cost]  +  λ · CVaR_α
+        với λ=0.3 (moderately risk-averse, consistent với λ used in MILP CVaR extension)
+
+        Parameters
+        ──────────
+        scenario_costs : list of (prob, cost) or (prob, cost, scenario_name)
+        alpha          : confidence level (0.95 recommended for supply chain)
+        lambda_weight  : CVaR weight in risk-adjusted objective (same as MILP λ)
+
+        Returns
+        ───────
+        dict with all CVaR metrics and formatting helpers for report
+        """
+        if not scenario_costs:
+            raise ValueError("scenario_costs is empty")
+
+        probs  = np.array([item[0] for item in scenario_costs], dtype=float)
+        costs  = np.array([item[1] for item in scenario_costs], dtype=float)
+        names  = [item[2] if len(item) > 2 else f"SC{i}"
+                for i, item in enumerate(scenario_costs)]
+
+        # Normalize probabilities (defensive)
+        probs = probs / probs.sum()
+
+        # Expected cost
+        e_cost = float(np.dot(probs, costs))
+
+        # Variance and CV
+        variance = float(np.dot(probs, (costs - e_cost)**2))
+        std_dev  = float(np.sqrt(variance))
+        cv       = std_dev / max(e_cost, 1.0) * 100.0
+
+        # VaR_α: solve via sorted cumulative probability
+        sorted_idx   = np.argsort(costs)
+        costs_sorted = costs[sorted_idx]
+        probs_sorted = probs[sorted_idx]
+        cumprob      = np.cumsum(probs_sorted)
+
+        # Smallest index where cumulative prob ≥ α
+        var_idx   = int(np.searchsorted(cumprob, alpha))
+        var_idx   = min(var_idx, len(costs) - 1)
+        var_alpha = float(costs_sorted[var_idx])
+
+        # CVaR_α: conditional expectation above VaR
+        # Using exact formula: CVaR = VaR + 1/(1-α) · E[max(cost-VaR, 0)]
+        excess     = np.maximum(costs - var_alpha, 0.0)
+        cvar_alpha = var_alpha + (1.0 / (1.0 - alpha)) * float(np.dot(probs, excess))
+
+        # Risk-adjusted objective
+        risk_adj_obj = (1.0 - lambda_weight) * e_cost + lambda_weight * cvar_alpha
+
+        # CVaR premium (how much worse than average in tail)
+        cvar_premium     = cvar_alpha - e_cost
+        cvar_premium_pct = cvar_premium / max(e_cost, 1.0) * 100.0
+
+        # Tail scenarios (above VaR)
+        tail_mask   = costs > var_alpha
+        tail_names  = [n for n, m in zip(names, tail_mask) if m]
+        tail_costs  = costs[tail_mask].tolist()
+        tail_probs  = probs[tail_mask].tolist()
+
+        return {
+            # Core metrics
+            "expected_cost":     e_cost,
+            "std_dev":           std_dev,
+            "cv_pct":            cv,
+            "var_95":            var_alpha,
+            "cvar_95":           cvar_alpha,
+            "cvar_premium":      cvar_premium,
+            "cvar_premium_pct":  cvar_premium_pct,
+            # Risk-adjusted
+            "lambda":            lambda_weight,
+            "alpha":             alpha,
+            "risk_adjusted_obj": risk_adj_obj,
+            # Tail analysis
+            "n_tail_scenarios":  int(tail_mask.sum()),
+            "tail_prob_mass":    float(probs[tail_mask].sum()),
+            "tail_scenario_names": tail_names,
+            "tail_scenario_costs": tail_costs,
+            "tail_scenario_probs": tail_probs,
+            # Min/Max
+            "best_case":         float(costs.min()),
+            "worst_case":        float(costs.max()),
+        }
+
+
+    @staticmethod
+    def format_cvar_report_section(metrics: Dict) -> str:
+        """Format CVaR metrics for inclusion in validation report."""
+        lines = [
+            "",
+            "=" * 80,
+            "5. RISK ANALYSIS  (CVaR-{:.0f}%)".format(metrics["alpha"] * 100),
+            "-" * 80,
+            "  Distribution shape:",
+            f"    Expected cost:       {metrics['expected_cost']:>20,.0f} VND",
+            f"    Std deviation:       {metrics['std_dev']:>20,.0f} VND",
+            f"    CV (σ/μ):            {metrics['cv_pct']:>19.1f}%",
+            f"    Best case:           {metrics['best_case']:>20,.0f} VND",
+            f"    Worst case:          {metrics['worst_case']:>20,.0f} VND",
+            "",
+            "  Tail risk metrics:",
+            f"    VaR-{metrics['alpha']*100:.0f}%:             {metrics['var_95']:>20,.0f} VND",
+            f"    CVaR-{metrics['alpha']*100:.0f}%:            {metrics['cvar_95']:>20,.0f} VND",
+            f"    CVaR premium:        {metrics['cvar_premium']:>20,.0f} VND",
+            f"    CVaR premium %:      {metrics['cvar_premium_pct']:>19.1f}%",
+            "",
+            "  Risk-adjusted objective (λ={:.1f}):".format(metrics["lambda"]),
+            f"    (1-λ)·E[cost]+λ·CVaR: {metrics['risk_adjusted_obj']:>19,.0f} VND",
+            "",
+            f"  Tail scenarios (cost > VaR, p_mass={metrics['tail_prob_mass']:.1%}):",
+        ]
+        for name, cost, prob in zip(
+            metrics["tail_scenario_names"],
+            metrics["tail_scenario_costs"],
+            metrics["tail_scenario_probs"],
+        ):
+            lines.append(f"    {name:<40} p={prob:.3f}  cost={cost:>15,.0f} VND")
+
+        lines += [
+            "",
+            "  → Implication: Risk-neutral procurement (minimize E[cost]) acceptable",
+            f"    ONLY if operator tolerates {metrics['cvar_premium_pct']:.1f}% higher cost",
+            "    in worst-case scenarios. Recommend CVaR-aware procurement for",
+            "    food security applications.",
+            "=" * 80,
+        ]
+        return "\n".join(lines)
+
 
 
 # Keep backward-compatible compute_vss/compute_evpi signatures for

@@ -1,0 +1,15 @@
+metric,value
+expected_cost,3818735113.821601
+std_dev,2423588531.5090604
+cv_pct,63.46574086107933
+var_95,10426987195.9146
+cvar_95,10426987195.9146
+cvar_premium,6608252082.092999
+cvar_premium_pct,173.0481922711782
+lambda,0.3
+alpha,0.95
+risk_adjusted_obj,5801210738.449501
+n_tail_scenarios,0.0
+tail_prob_mass,0.0
+best_case,2710900089.2713857
+worst_case,10426987195.9146

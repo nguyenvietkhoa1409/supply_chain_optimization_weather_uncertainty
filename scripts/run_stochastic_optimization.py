@@ -209,7 +209,31 @@ def main():
         eev_breakdown=eev_breakdown,
         ws_breakdown=ws_breakdown,
     )
+    # [FIX-C1] TÍCH HỢP BÁO CÁO CVaR VÀO ĐÂY
+    if not sc_costs.empty:
+        # Chuyển đổi DataFrame thành list of tuples theo yêu cầu của hàm
+        rp_scenario_costs_list = [
+            (row["probability"], row["total_cost"], row["scenario_name"])
+            for _, row in sc_costs.iterrows()
+        ]
+        
+        cvar_metrics = validator.compute_cvar_metrics(
+            rp_scenario_costs_list,
+            alpha=0.95,
+            lambda_weight=0.30
+        )
+        
+        # Nối thêm phần CVaR report vào báo cáo chung
+        report += "\n" + validator.format_cvar_report_section(cvar_metrics)
 
+        # Lưu riêng file CSV cho CVaR metrics (STEP 8)
+        pd.DataFrame([{
+            "metric":  k,
+            "value":   v,
+        } for k, v in cvar_metrics.items() if isinstance(v, (int, float))]).to_csv(
+            os.path.join(os.path.dirname(__file__), "..", "results", "cvar_metrics.csv"), index=False
+        )
+        
     vehicle_dispatch = rp_solution.get("vehicle_dispatch", {})
     if not sc_costs.empty and vehicle_dispatch:
         try:
