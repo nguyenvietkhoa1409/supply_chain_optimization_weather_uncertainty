@@ -53,7 +53,7 @@ class DataDrivenWeatherScenario(GeneratedWeatherScenario):
 def get_data_driven_scenarios(
     season:         str   = "monsoon",
     n_samples:      int   = 600,
-    target_count:   int   = 8,
+    target_count:   int   = 10,
     seed:           int   = 2024,
     cache_dir:      Optional[str] = "data/weather_cache",
     dist_cache:     Optional[str] = "data/danang_distribution_parameters.json",
@@ -97,6 +97,7 @@ def get_data_driven_scenarios(
     scenarios, quality = gen.generate_scenarios(
         season=season, n_samples=n_samples, target_count=target_count,
         seed=seed, force_extreme=force_extreme,
+        merge_duplicates = False
     )
 
     if verbose:

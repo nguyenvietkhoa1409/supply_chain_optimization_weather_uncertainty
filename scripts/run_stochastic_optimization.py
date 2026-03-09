@@ -219,7 +219,7 @@ def main():
         
         cvar_metrics = validator.compute_cvar_metrics(
             rp_scenario_costs_list,
-            alpha=0.95,
+            alpha=0.90,
             lambda_weight=0.30
         )
         
