@@ -93,9 +93,11 @@ Monsoon season (September–December) is the primary risk period: mean rainfall 
 
 **Demand Reconstruction.** Raw sales data is censored: any observation where stock status indicates a stockout period is an incomplete record of true demand. The reconstruction algorithm uses intra-day CDF patterns — derived from non-stockout days at multiple aggregation levels (SKU-store down to global fallback) with shrinkage blending by data availability — to impute true daily demand from the partial pre-stockout sales signal:
 
-$$\hat{D} = \frac{\sum_{h \leq h^*} y_h}{\hat{F}(h^*)}$$
+$$
+\hat{D} = \frac{\sum_{h \leq h^{\ast}} y_{h}}{\hat{F}(h^{\ast})}
+$$
 
-where $h^*$ is the last available (non-stockout) hour and $\hat{F}(h^*)$ is the estimated cumulative demand fraction at that hour. A floor constraint prevents unbounded correction in edge cases.
+where h^{\ast}$ is the last available (non-stockout) hour and $\hat{F}(h^{\ast})$ is the estimated cumulative demand fraction at that hour. A floor constraint prevents unbounded correction in edge cases.
 
 **Demand Forecasting.** The pipeline applies automatic segmentation: SKU-store pairs meeting minimum sales volume and data density thresholds are routed to a LightGBM direct multi-horizon model (one model per forecast horizon $h \in \{1, \ldots, 7\}$ days); remaining intermittent/sparse items use a 7-day Simple Moving Average. This ensures 100% SKU coverage for downstream planning regardless of data quality. The direct multi-step architecture avoids error accumulation from recursive single-step forecasting.
 
@@ -133,7 +135,7 @@ $$\min_{x, y} \sum_{s,p} c_{sp} \cdot x_{sp} + \sum_{s,p} f_s \cdot y_{sp}$$
 
 where $x_{sp}$ is order quantity (continuous) and $y_{sp}$ is binary supplier activation for fixed-cost charging. Non-anticipativity is enforced structurally: Stage 1 variables carry no scenario index $k$.
 
-*Stage 2 — after scenario $k$ realizes:*
+*Stage 2 — after scenario k realizes:*
 
 $$\min_{e_k,\, u_k} \sum_p \left(2c_p \cdot e_{k,p} + \pi_k \cdot c_p \cdot u_{k,p}\right)$$
 
@@ -283,3 +285,5 @@ python scripts/run_stochastic_optimization.py
 ## Skills & Technologies
 
 `Python` · `Supply Chain Optimization` · `Operations Research` · `Demand Forecasting` · `LightGBM` · `Time Series Analysis` · `Mixed-Integer Linear Programming (MILP)` · `Two-Stage Stochastic Programming` · `Sample Average Approximation (SAA)` · `Newsvendor Problem` · `Vehicle Routing Problem (VRP)` · `Conditional Value-at-Risk (CVaR)` · `Scenario Generation` · `Latin Hypercube Sampling` · `Inventory Management` · `Perishable Goods Logistics` · `Weather Uncertainty Modeling` · `PuLP` · `Pandas` · `NumPy` · `SciPy`
+
+
