@@ -1,20 +1,6 @@
 # Fresh Food Supply Chain Optimization
 ### Data-Driven Inventory Optimization & Weather-Aware Procurement for Perishable Retail
 
-<p align="center">
-  <img src="https://img.shields.io/badge/Python-3.10+-blue?style=flat-square&logo=python" />
-  <img src="https://img.shields.io/badge/LightGBM-Demand%20Forecasting-green?style=flat-square" />
-  <img src="https://img.shields.io/badge/PuLP-Stochastic%20MILP-orange?style=flat-square" />
-  <img src="https://img.shields.io/badge/Stochastic%20Programming-Two--Stage-purple?style=flat-square" />
-  <img src="https://img.shields.io/badge/CVaR-Risk%20Management-red?style=flat-square" />
-</p>
-
-<p align="center">
-  <b>−28.5% inventory cost</b> &nbsp;·&nbsp; <b>−36.3% food waste</b> &nbsp;·&nbsp; <b>VSS 37.5%</b> &nbsp;·&nbsp; <b>EVPI 11.8%</b>
-</p>
-
----
-
 ## Overview
 
 This project builds an end-to-end optimization pipeline for fresh food retail supply chains, addressing two core objectives:
