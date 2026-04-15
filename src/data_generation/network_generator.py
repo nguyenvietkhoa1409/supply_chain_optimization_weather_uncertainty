@@ -1,7 +1,9 @@
 """
 Network Generator - Creates realistic Da Nang supply chain topology
 Generates suppliers, distribution centers, and retail stores with geographic coordinates
-INCLUDES: 1 general supplier that can supply all products
+INCLUDES:
+  - 1 general supplier (wholesale market) that can supply all products
+  - PDP support: time_window_open/close (hours) and service_time_min at each node
 """
 
 import pandas as pd
@@ -50,7 +52,9 @@ class DaNangNetworkGenerator:
         """
         suppliers = []
         
-        # 5 Specialized suppliers
+        # 5 Specialized suppliers with PDP time windows
+        # Time windows represent operational hours (24h clock)
+        # Rationale: fresh produce markets open early morning in Vietnamese context
         archetypes = [
             {
                 'name': 'Tho Quang Seafood',
@@ -58,7 +62,10 @@ class DaNangNetworkGenerator:
                 'base_lat': 16.0833,
                 'base_lon': 108.2167,
                 'capacity_range': (2000, 3000),
-                'fixed_cost_range': (300000, 500000)
+                'fixed_cost_range': (300000, 500000),
+                'tw_open': 4,    # 4:00 AM - fishing port opens at dawn
+                'tw_close': 8,   # 8:00 AM - fresh stock sold out by morning
+                'service_min': 30
             },
             {
                 'name': 'Hoa Vang Vegetables',
@@ -66,7 +73,10 @@ class DaNangNetworkGenerator:
                 'base_lat': 16.0167,
                 'base_lon': 108.1167,
                 'capacity_range': (1500, 2500),
-                'fixed_cost_range': (200000, 400000)
+                'fixed_cost_range': (200000, 400000),
+                'tw_open': 5,    # 5:00 AM - farm market opens
+                'tw_close': 9,   # 9:00 AM
+                'service_min': 25
             },
             {
                 'name': 'Hoa Khanh Meat',
@@ -74,7 +84,10 @@ class DaNangNetworkGenerator:
                 'base_lat': 16.0375,
                 'base_lon': 108.1528,
                 'capacity_range': (1200, 2000),
-                'fixed_cost_range': (250000, 450000)
+                'fixed_cost_range': (250000, 450000),
+                'tw_open': 4,    # 4:00 AM - slaughterhouse
+                'tw_close': 9,   # 9:00 AM
+                'service_min': 35
             },
             {
                 'name': 'Lien Chieu Farm',
@@ -82,7 +95,10 @@ class DaNangNetworkGenerator:
                 'base_lat': 16.0750,
                 'base_lon': 108.1500,
                 'capacity_range': (1000, 1800),
-                'fixed_cost_range': (150000, 350000)
+                'fixed_cost_range': (150000, 350000),
+                'tw_open': 5,
+                'tw_close': 10,
+                'service_min': 20
             },
             {
                 'name': 'Nam O Fishing Port',
@@ -90,7 +106,10 @@ class DaNangNetworkGenerator:
                 'base_lat': 16.1167,
                 'base_lon': 108.1667,
                 'capacity_range': (1800, 2500),
-                'fixed_cost_range': (280000, 480000)
+                'fixed_cost_range': (280000, 480000),
+                'tw_open': 4,
+                'tw_close': 8,
+                'service_min': 30
             }
         ]
         
@@ -112,7 +131,10 @@ class DaNangNetworkGenerator:
                 'latitude': lat,
                 'longitude': lon,
                 'capacity_kg_per_day': round(capacity, 2),
-                'fixed_cost_vnd': round(fixed_cost, 0)
+                'fixed_cost_vnd': round(fixed_cost, 0),
+                'time_window_open':  arch['tw_open'],    # PDP: earliest pickup hour
+                'time_window_close': arch['tw_close'],   # PDP: latest pickup hour
+                'service_time_min':  arch['service_min'] # PDP: loading time at supplier
             })
         
         # CRITICAL FIX: Add 6th GENERAL supplier (wholesale market)
@@ -124,8 +146,11 @@ class DaNangNetworkGenerator:
                 'subtype': 'general',  # Can supply ALL products
                 'latitude': self.center_lat,
                 'longitude': self.center_lon,
-                'capacity_kg_per_day': 5000.0,  # Large capacity
-                'fixed_cost_vnd': 500000.0
+                'capacity_kg_per_day': 900.0,
+                'fixed_cost_vnd': 1500000.0,
+                'time_window_open':  4,   # PDP: wholesale market opens at dawn
+                'time_window_close': 11,  # PDP: closing time
+                'service_time_min':  45   # PDP: larger loading time at market
             })
         
         return pd.DataFrame(suppliers)
@@ -193,7 +218,10 @@ class DaNangNetworkGenerator:
                 'type': 'store',
                 'latitude': lat,
                 'longitude': lon,
-                'demand_factor': cluster['demand_factor']
+                'demand_factor': cluster['demand_factor'],
+                'time_window_open':  6,   # PDP: stores start receiving at 6AM
+                'time_window_close': 11,  # PDP: last delivery by 11AM
+                'service_time_min':  15   # PDP: unloading time at store
             })
         
         return pd.DataFrame(stores)

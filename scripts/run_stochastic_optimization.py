@@ -6,6 +6,8 @@ UPDATED v2: Heterogeneous Fleet (Patel et al. adaptation)
 
 import os
 import sys
+import os
+os.environ['GRB_LICENSE_FILE'] = r'D:\gurobi.lic'
 from typing import Dict
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
@@ -89,7 +91,8 @@ def main():
 
     products         = pd.read_csv(os.path.join(data_dir, "products.csv"))
     supplier_product = pd.read_csv(os.path.join(data_dir, "supplier_product_matrix.csv"))
-    weekly_demand    = pd.read_csv(os.path.join(data_dir, "weekly_demand.csv"))
+    demand_full = pd.read_csv(os.path.join(data_dir, "daily_demand.csv"))
+    daily_demand = demand_full[demand_full["date"] == "2024-10-01"].copy()
 
     # Back-fill new columns for older saved data
     if "volume_m3_per_unit" not in products.columns:
@@ -117,7 +120,7 @@ def main():
     else:
         # scenarios   = ManualWeatherScenarios.create_monsoon_season_scenarios()
         # season_name = "Monsoon Season"
-        scenarios = get_data_driven_scenarios(season="monsoon")
+        scenarios = get_data_driven_scenarios(season="monsoon", target_count=5)
         season_name = "Monsoon Season"
 
     total_p = sum(s.probability for s in scenarios)
@@ -148,7 +151,7 @@ def main():
         network=network,
         products_df=products,
         supplier_product_df=supplier_product,
-        demand_df=weekly_demand,
+        demand_df=daily_demand,
         weather_scenarios=scenarios,
         vehicle_config=VEHICLE_CONFIG_LEGACY,
         fleet_instances=fleet_optimizer,         # [FIX-F1] optimizer-format fleet
@@ -175,7 +178,7 @@ def main():
     det_model = DeterministicBaselineModel(
         network=network, products_df=products,
         supplier_product_df=supplier_product,
-        demand_df=weekly_demand, weather_scenarios=scenarios,
+        demand_df=daily_demand, weather_scenarios=scenarios,
     )
     det_status, det_solution = det_model.solve(time_limit=300)
     if det_status not in ("Optimal", "Feasible"):
@@ -190,13 +193,13 @@ def main():
     print("\n" + "-" * 80)
     print("STEP 5: Computing EEV")
     eev, eev_breakdown = validator.compute_eev(
-        ev_stage1, scenarios, network, products, supplier_product, weekly_demand, 120
+        ev_stage1, scenarios, network, products, supplier_product, daily_demand, 120
     )
 
     print("\n" + "-" * 80)
     print("STEP 6: Computing WS")
     ws, ws_breakdown = validator.compute_ws(
-        scenarios, network, products, supplier_product, weekly_demand, 300,
+        scenarios, network, products, supplier_product, daily_demand, 300,
         vehicle_config=VEHICLE_CONFIG_LEGACY,
         fleet_instances=fleet_optimizer,         # [FIX-F2] optimizer-format fleet
     )
@@ -255,6 +258,12 @@ def main():
     sc_costs.to_csv(os.path.join(results_dir, "scenario_costs_fixed.csv"), index=False)
     eev_breakdown.to_csv(os.path.join(results_dir, "eev_breakdown.csv"), index=False)
     ws_breakdown.to_csv(os.path.join(results_dir, "ws_breakdown.csv"), index=False)
+
+    # [PDP] Save scenario routes (pickup + delivery sequences)
+    import json as _json
+    scenario_routes = rp_solution.get("scenario_routes", {})
+    with open(os.path.join(results_dir, "scenario_routes_fixed.json"), "w", encoding="utf-8") as f:
+        _json.dump(scenario_routes, f, indent=2, ensure_ascii=False)
 
     if vehicle_dispatch:
         rows = []

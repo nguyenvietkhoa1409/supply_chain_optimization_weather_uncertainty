@@ -242,10 +242,10 @@ class ProductCatalogGenerator:
         general_suppliers = suppliers_df[suppliers_df["subtype"] == "general"]
         if len(general_suppliers) > 0:
             general_id = general_suppliers.iloc[0]["id"]
-            print(f"\n✓ General supplier {general_id} covers ALL products (10-15% premium)")
+            print(f"\n✓ General supplier {general_id} covers ALL products (30-40% premium)")
             for _, product in products_df.iterrows():
                 base_cost     = product["unit_cost_vnd"]
-                supplier_cost = base_cost * np.random.uniform(1.10, 1.15)
+                supplier_cost = base_cost * np.random.uniform(1.30, 1.40)
                 moq           = np.random.randint(10, 30)
                 matrix_data.append({
                     "supplier_id":    general_id,

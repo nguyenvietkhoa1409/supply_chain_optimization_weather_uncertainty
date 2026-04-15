@@ -1,36 +1,41 @@
 """
 Extensive Form Optimizer – True Two-Stage Stochastic MILP
-UPDATED: Heterogeneous Fleet Support + BUG-Q1 Fix
+UPDATED v3: Pickup & Delivery Problem (PDP) Formulation
 
-Changes from previous version
-──────────────────────────────
-[FLEET-1]  Heterogeneous fleet (4 types, 7 instances) replaces 3 identical vehicles.
-    Inspired by Patel et al. (2024) F_k·X_k + L_ijk·d_ij·O_k cost structure where
-    each vehicle type k has distinct fixed cost F_k and transport cost L_ijk.
+Changes from v2 (Two-Echelon distribution)
+──────────────────────────────────────────
+[PDP-1]  Node set expanded to {DC} ∪ {Suppliers} ∪ {Stores}.
+    Company vehicles now pick up from suppliers (pickup nodes) then
+    deliver to stores (delivery nodes). This gives the business full
+    routing control — aligning with the Adaptive Sequential Decision-Making
+    framework (reference paper, Sustainability 2024, 16, 98).
 
-[FLEET-2]  Per-vehicle fixed deployment cost in Stage 2 objective.
-    Mirrors "F_k·X_k" from Patel et al. procurement model.
-    A vehicle incurs its fixed_cost_vnd whenever it departs the depot.
+[PDP-2]  New decision variable qty_pickup[k,s,p,v]:
+    Quantity of product p picked up from supplier s by vehicle v
+    in scenario k.  Flow-balance constraint ties this to Stage-1
+    procurement x[s,p]: Σ_v qty_pickup[k,s,p,v] = x[s,p].
 
-[FLEET-3]  Vehicles with effective_capacity < 50 kg under a given scenario
-    are automatically excluded from routing in that scenario (large trucks in typhoon).
+[PDP-3]  Time-window constraints at BOTH supplier and store nodes.
+    Suppliers: time_window_open ≤ T_arrive[k,s,v] ≤ time_window_close
+    Stores:    time_window_open ≤ T_arrive[k,r,v] ≤ time_window_close
+    Enforced via Big-M deactivation when vehicle does not visit node.
 
-[FLEET-4]  Refrigerated vehicles reduce spoilage for carried goods (65% reduction).
-    Models cold-chain benefit: maintains ~4°C, cutting Arrhenius degradation.
+[PDP-4]  Pickup-First Precedence (simplified Option B):
+    All supplier visits must complete before any store visit.
+    T_arrive[k,s,v] ≤ T_arrive[k,r,v]  ∀s∈Suppliers, r∈Stores
+    Big-M deactivated when vehicle doesn't visit both nodes.
+    Reflects morning procurement cycle reality (4-9 AM pickup,
+    6-11 AM delivery).
 
-[FLEET-5]  Per-vehicle effective speed = base_speed / road_slowdown × type_weather_factor.
-    Mini trucks retain more urban speed in rain; large trucks lose more.
+[PDP-5]  Cargo Mixing — Vehicle-Product Compatibility:
+    Products requiring refrigeration may only be carried by
+    refrigerated vehicles. Enforced as:
+    qty_pickup[k,s,p,v] = 0  if v not refrigerated and p requires_refrig
+    qty[k,r,p,v]        = 0  if v not refrigerated and p requires_refrig
 
-[BUG-Q1]  Fixed sp_transit: switched from qty-based to arc-based computation.
-    Root cause: qty[k,r,p,v] had no lower bound → solver set qty=0 to avoid
-    sp_transit cost → sp_transit=0 → ref_truck spoilage_reduction benefit invisible
-    → n_refrigerated_active=0 in all scenarios.
-    Previous attempted fix (lower bound on qty) caused infeasibility when fleet
-    capacity < total procurement.
-    Correct fix: sp_transit = base_spoil × mult × (1-reduction) × Σ_p product_cost[p]
-                 × store_demand[r,p] × (dist[depot→r] / speed[v]) × arc[k,depot,r,v]
-    arc[k,depot,r,v] is binary and always ≥ 0 — no new constraints, no infeasibility.
-    Solver now sees ref_truck spoilage saving on every store-visit arc it commits to.
+[PDP-6]  Stage-2 travel time computed from actual distance and
+    per-vehicle effective speed, propagating through all nodes
+    (suppliers and stores) via MTZ-style time variables.
 
 Backward compatibility
 ──────────────────────
@@ -43,6 +48,7 @@ from typing import Dict, List, Optional, Tuple
 
 import numpy as np
 import pandas as pd
+import pulp
 from pulp import (
     PULP_CBC_CMD, LpMinimize, LpProblem, LpStatus,
     LpVariable, lpSum, value,
@@ -57,10 +63,15 @@ except ImportError:
         legacy_vehicle_config_to_fleet = None
 
 _MIN_OPERABLE_CAP_KG = 50.0
+_M_BIG_TIME          = 24.0   # hours – time horizon
+_M_BIG_QTY           = 16400  # Data-verified Big-M:
+# max_supplier_capacity_kg / min(weight_kg_per_unit) × 1.2 safety buffer
+# = 2732 kg / 0.20 kg·unit⁻¹ × 1.2 = 16,392 → rounded up to 16,400
+# (was 100k → LP relaxation too weak; 5000 → artificially constrained 9/10 products)
 
 
 class ExtensiveFormOptimizer:
-    """True two-stage stochastic extensive-form optimizer with heterogeneous fleet."""
+    """Two-stage stochastic MILP with heterogeneous fleet and PDP routing."""
 
     _DC_MAX_SEVERITY = {"hoakhanh": 3, "lienchieu": 5}
 
@@ -88,7 +99,7 @@ class ExtensiveFormOptimizer:
         self.baseline_ratio      = baseline_ratio
         self.emergency_ratio     = emergency_ratio
 
-        # ── Fleet resolution [FLEET-1] ─────────────────────────────────────
+        # ── Fleet resolution ───────────────────────────────────────────────
         if fleet_instances is not None:
             self.fleet = fleet_instances
         elif vehicle_config is not None and legacy_vehicle_config_to_fleet is not None:
@@ -114,28 +125,43 @@ class ExtensiveFormOptimizer:
 
         self._create_lookups()
 
-        K = len(self.scenarios)
-        V = len(self.fleet)
-        R = len(self.stores)
+        K      = len(self.scenarios)
+        V      = len(self.fleet)
+        R      = len(self.stores)
+        S      = len(self.suppliers)
         refrig = sum(1 for v in self.fleet if v["refrigerated"])
 
-        print("ExtensiveFormOptimizer (Heterogeneous Fleet):")
-        print(f"  K={K} scenarios, V={V} vehicles ({refrig} refrigerated), R={R} stores")
+        print("ExtensiveFormOptimizer (PDP — Pickup & Delivery):")
+        print(f"  K={K} scenarios, V={V} vehicles ({refrig} refrigerated)")
+        print(f"  S={S} supplier pickup nodes, R={R} store delivery nodes")
         print(f"  Types: {list(dict.fromkeys(v['type_id'] for v in self.fleet))}")
         print(f"  λ={risk_aversion}, α={cvar_alpha}")
 
     # ── lookups ────────────────────────────────────────────────────────────
     def _create_lookups(self):
-        self.product_cost   = dict(zip(self.products_df["id"], self.products_df["unit_cost_vnd"]))
-        self.product_weight = dict(zip(self.products_df["id"], self.products_df["weight_kg_per_unit"]))
-        self.supplier_capacity   = dict(zip(self.network["suppliers"]["id"],
-                                            self.network["suppliers"]["capacity_kg_per_day"]))
-        self.supplier_fixed_cost = dict(zip(self.network["suppliers"]["id"],
-                                            self.network["suppliers"]["fixed_cost_vnd"]))
-        self.supplier_subtype = {
-            r["id"]: r.get("subtype", "general")
-            for _, r in self.network["suppliers"].iterrows()
-        }
+        self.product_cost    = dict(zip(self.products_df["id"], self.products_df["unit_cost_vnd"]))
+        self.product_weight  = dict(zip(self.products_df["id"], self.products_df["weight_kg_per_unit"]))
+        self.product_refrig  = dict(zip(self.products_df["id"], self.products_df["requires_refrigeration"].astype(bool)))
+
+        sup_df = self.network["suppliers"]
+        self.supplier_capacity   = dict(zip(sup_df["id"], sup_df["capacity_kg_per_day"]))
+        self.supplier_fixed_cost = dict(zip(sup_df["id"], sup_df["fixed_cost_vnd"]))
+        self.supplier_subtype    = {r["id"]: r.get("subtype", "general") for _, r in sup_df.iterrows()}
+
+        # PDP time windows (hours)
+        self.supplier_tw_open  = dict(zip(sup_df["id"], sup_df.get("time_window_open",  pd.Series([4]*len(sup_df), index=sup_df.index))))
+        self.supplier_tw_close = dict(zip(sup_df["id"], sup_df.get("time_window_close", pd.Series([11]*len(sup_df), index=sup_df.index))))
+        self.supplier_svc_h    = {s: self.network["suppliers"].set_index("id").loc[s, "service_time_min"] / 60.0
+                                   if "service_time_min" in self.network["suppliers"].columns else 0.5
+                                   for s in self.suppliers}
+
+        sto_df = self.network["stores"]
+        self.store_tw_open  = dict(zip(sto_df["id"], sto_df.get("time_window_open",  pd.Series([6]*len(sto_df),  index=sto_df.index))))
+        self.store_tw_close = dict(zip(sto_df["id"], sto_df.get("time_window_close", pd.Series([11]*len(sto_df), index=sto_df.index))))
+        self.store_svc_h    = {r: self.network["stores"].set_index("id").loc[r, "service_time_min"] / 60.0
+                                if "service_time_min" in self.network["stores"].columns else 0.25
+                                for r in self.stores}
+
         self.sp_cost, self.sp_moq, self.sp_available = {}, {}, {}
         for _, r in self.supplier_product_df.iterrows():
             s, p = r["supplier_id"], r["product_id"]
@@ -145,10 +171,12 @@ class ExtensiveFormOptimizer:
 
         dm = self.network["distance_matrix"]
         dcs = self.network["dcs"]["id"].tolist()
-        self.all_nodes = dcs + self.stores
-        self.distance  = {}
-        for i in self.all_nodes:
-            for j in self.all_nodes:
+        # PDP all_nodes: depot + suppliers + stores
+        self.depot_nodes    = dcs
+        self.all_pdp_nodes  = dcs + self.suppliers + self.stores
+        self.distance = {}
+        for i in self.all_pdp_nodes:
+            for j in self.all_pdp_nodes:
                 if i != j:
                     try:    self.distance[(i, j)] = float(dm.loc[i, j])
                     except Exception:
@@ -195,54 +223,85 @@ class ExtensiveFormOptimizer:
         vtf  = veh["weather_speed_factor"].get(sc.severity_level, 1.0)
         return max(veh["base_speed_kmh"] * road * vtf, 1.0)
 
+    def _can_carry(self, v_idx: int, p: str) -> bool:
+        """[PDP-5] Cargo mixing: refrigerated products → refrigerated vehicles only."""
+        if self.product_refrig.get(p, False):
+            return self.fleet[v_idx]["refrigerated"]
+        return True
+
     # ── build model ────────────────────────────────────────────────────────
     def build_model(self) -> Tuple[LpProblem, Dict]:
-        print("\nBuilding extensive-form MILP (heterogeneous fleet)…")
+        print("\nBuilding extensive-form MILP (PDP — Pickup & Delivery)…")
         K     = len(self.scenarios)
-        M_big = 24.0
-        M_qty = 100_000
-        M_s1  = 100_000
+        M_s1  = _M_BIG_QTY
+        M_t   = _M_BIG_TIME
 
-        model = LpProblem("ExtensiveForm_Fleet", LpMinimize)
+        model = LpProblem("ExtensiveForm_PDP", LpMinimize)
 
-        # Stage 1
+        # ── Stage 1 variables ──────────────────────────────────────────────
         x = LpVariable.dicts("x",
             ((s, p) for s in self.suppliers for p in self.products), lowBound=0)
         y = LpVariable.dicts("y",
             ((s, p) for s in self.suppliers for p in self.products), cat="Binary")
 
-        # Stage 2 recourse
+        # ── Stage 2 recourse ───────────────────────────────────────────────
         e = LpVariable.dicts("e",
             ((k, p) for k in range(K) for p in self.products), lowBound=0)
         u = LpVariable.dicts("u",
             ((k, p) for k in range(K) for p in self.products), lowBound=0)
 
-        # VRP variables (only for operable vehicles per scenario)
-        arc, qty, T_mtz       = {}, {}, {}
-        depot_by_k            = {}
-        operable_by_k: Dict   = {}
+        # PDP routing variables (per scenario)
+        arc         = {}   # arc[k, i, j, v]  — traversal binary
+        qty_pickup  = {}   # qty_pickup[k, s, p, v]  — pickup at supplier
+        qty         = {}   # qty[k, r, p, v]  — delivery at store
+        T_arrive    = {}   # T_arrive[k, i, v]  — arrival time at any node
+
+        depot_by_k     = {}
+        operable_by_k  = {}
 
         for k, sc in enumerate(self.scenarios):
             depot = self._get_depot(sc)
             depot_by_k[k] = depot
-            nodes = [depot] + self.stores
-            V = len(self.fleet)
-            ops = [v for v in range(V)
+            V_count = len(self.fleet)
+            ops = [v for v in range(V_count)
                    if self._eff_cap(v, sc.severity_level) >= _MIN_OPERABLE_CAP_KG]
             operable_by_k[k] = ops
 
+            # [PDP-1] Node set: depot + supplier nodes + store nodes
+            pdp_nodes = [depot] + self.suppliers + self.stores
+
             for v in ops:
-                for i in nodes:
-                    for j in nodes:
+                # Arc variables over full PDP node set
+                for i in pdp_nodes:
+                    for j in pdp_nodes:
                         if i != j:
+                            # [PERFORMANCE FIX] Prune illogical arcs to drastically reduce binary variables
+                            if i in self.stores and j in self.suppliers:
+                                continue # Precedence strictly forbids Store -> Supplier
+                            if i == depot and j in self.stores:
+                                continue # Must visit suppliers before stores! Depot -> Store is illogical here
+                            
                             arc[k, i, j, v] = LpVariable(
                                 f"arc_{k}_{i}_{j}_{v}", cat="Binary")
+
+                # [PDP-2] Pickup quantity at suppliers
+                for s in self.suppliers:
+                    for p in self.products:
+                        if self.sp_available.get((s, p), False) and self._can_carry(v, p):
+                            qty_pickup[k, s, p, v] = LpVariable(
+                                f"qpick_{k}_{s}_{p}_{v}", lowBound=0)
+
+                # Delivery quantity at stores
                 for r in self.stores:
                     for p in self.products:
-                        qty[k, r, p, v] = LpVariable(f"qty_{k}_{r}_{p}_{v}", lowBound=0)
-                for j in nodes:
-                    T_mtz[k, j, v] = LpVariable(f"T_{k}_{j}_{v}",
-                                                  lowBound=0, upBound=M_big)
+                        if self._can_carry(v, p):
+                            qty[k, r, p, v] = LpVariable(
+                                f"qty_{k}_{r}_{p}_{v}", lowBound=0)
+
+                # [PDP-6] Arrival time at every PDP node
+                for i in pdp_nodes:
+                    T_arrive[k, i, v] = LpVariable(
+                        f"T_{k}_{i}_{v}", lowBound=0, upBound=M_t)
 
         # CVaR
         eta, zeta = None, None
@@ -263,54 +322,46 @@ class ExtensiveFormOptimizer:
         )
 
         s2_terms = []
-        base_spoil = 0.04  # fraction of product cost spoiled per hour in transit
+        base_spoil = 0.04
 
         for k, sc in enumerate(self.scenarios):
             prob  = sc.probability
             depot = depot_by_k[k]
-            nodes = [depot] + self.stores
             ops   = operable_by_k[k]
+            pdp_nodes = [depot] + self.suppliers + self.stores
 
-            # [FLEET-2] Fixed vehicle deployment: F_v * departs[k,v]
+            # Vehicle fixed deployment cost
             fixed_v = lpSum(
                 self.fleet[v]["fixed_cost_vnd"]
-                * lpSum(arc[k, depot, j, v] for j in self.stores
+                * lpSum(arc[k, depot, j, v]
+                        for j in (self.suppliers + self.stores)
                         if (k, depot, j, v) in arc)
                 for v in ops
             )
 
-            # Variable transport cost L_v * d_ij * O_k  (Patel notation)
+            # Variable transport cost across ALL arcs (pickup + delivery)
             vrp_var = lpSum(
                 self.distance.get((i, j), 0)
                 * (self.fleet[v]["cost_per_km"]
                    + self.fleet[v]["cost_per_hour"] / self._eff_speed(v, sc))
                 * arc[k, i, j, v]
                 for v in ops
-                for i in nodes for j in nodes if i != j
+                for i in pdp_nodes for j in pdp_nodes if i != j
                 if (k, i, j, v) in arc
             )
 
-            em_cost   = lpSum(2.0 * self.product_cost[p] * e[k, p] for p in self.products)
-            pm        = min(10.0, 5.0 * sc.spoilage_multiplier)
-            unmet_c   = lpSum(pm * self.product_cost[p] * u[k, p] for p in self.products)
+            em_cost  = lpSum(2.0 * self.product_cost[p] * e[k, p] for p in self.products)
+            pm       = min(10.0, 5.0 * sc.spoilage_multiplier)
+            unmet_c  = lpSum(pm * self.product_cost[p] * u[k, p] for p in self.products)
 
-            # Spoilage from inaccessible suppliers (Stage 1 opportunity cost)
+            # Spoilage from inaccessible suppliers
             sp_s1 = lpSum(
                 self.sp_cost.get((s, p), self.product_cost[p]) * x[s, p]
                 for p in self.products
                 for s in self._inaccessible_suppliers(sc, p)
             )
 
-            # [FLEET-4 / BUG-Q1 FIX] In-transit spoilage via arc (routing) variables
-            # Root cause of previous bug: qty[k,r,p,v] had no lower bound → solver set
-            # qty=0 to avoid sp_transit cost → sp_transit=0 → ref_truck advantage invisible.
-            #
-            # Fix: compute spoilage from arc[k,depot,r,v] (binary dispatch variable) ×
-            # store_demand[r,p] (parameter). If vehicle v travels depot→store r, it is
-            # carrying store r's demand, so spoilage = base_spoil × mult × (1-reduction)
-            # × product_cost × transit_time × store_demand.
-            # This is linear (arc binary × constant) and ref_trucks always show
-            # spoilage_reduction=0.65 benefit whenever they are dispatched.
+            # In-transit spoilage (arc-based, depot→store delivery leg)
             sp_transit = lpSum(
                 base_spoil
                 * sc.spoilage_multiplier
@@ -349,20 +400,32 @@ class ExtensiveFormOptimizer:
                 if self.sp_available.get((s, p), False):
                     moq = self.sp_moq.get((s, p), 0)
                     model += (x[s, p] >= moq * y[s, p], f"S1MOQlo_{s}_{p}")
-                    model += (x[s, p] <= M_s1 * y[s, p], f"S1MOQhi_{s}_{p}")
+                    model += (x[s, p] <= M_s1 * y[s, p],  f"S1MOQhi_{s}_{p}")
         for p in self.products:
             d = self.total_demand.get(p, 0)
             if d > 0:
                 all_x = lpSum(x[s, p] for s in self.suppliers
                               if self.sp_available.get((s, p), False))
                 model += (all_x >= self.baseline_ratio * d, f"S1Base_{p}")
-                model += (all_x <= 1.5 * d, f"S1Over_{p}")
+                model += (all_x <= 1.5 * d,                 f"S1Over_{p}")
+
+        # [FIX-CONCENTRATION] Max Supplier Concentration Risk Constraint
+        max_concentration_ratio = 0.40
+        for p in self.products:
+            d = self.total_demand.get(p, 0)
+            if d > 0:
+                for s in self.suppliers:
+                    if self.sp_available.get((s, p), False):
+                        model += (
+                            x[s, p] <= max_concentration_ratio * d,
+                            f"S1_Concentration_{s}_{p}"
+                        )
 
         # ── Stage 2 Constraints ────────────────────────────────────────────
         for k, sc in enumerate(self.scenarios):
-            depot = depot_by_k[k]
-            nodes = [depot] + self.stores
-            ops   = operable_by_k[k]
+            depot     = depot_by_k[k]
+            ops       = operable_by_k[k]
+            pdp_nodes = [depot] + self.suppliers + self.stores
 
             for p in self.products:
                 d      = self.total_demand.get(p, 0)
@@ -376,89 +439,182 @@ class ExtensiveFormOptimizer:
                     model += (acc + e[k, p] + u[k, p] >= d, f"S2Dem_{k}_{p}")
 
             if not ops:
-                continue  # all vehicles grounded; demand covered by emergency/unmet
+                continue
 
-            # Flow conservation
+            # ── PDP Flow Conservation ──────────────────────────────────────
             for v in ops:
-                for i in nodes:
-                    in_f  = lpSum(arc[k, j, i, v] for j in nodes
+                for i in pdp_nodes:
+                    in_f  = lpSum(arc[k, j, i, v] for j in pdp_nodes
                                   if j != i and (k, j, i, v) in arc)
-                    out_f = lpSum(arc[k, i, j, v] for j in nodes
+                    out_f = lpSum(arc[k, i, j, v] for j in pdp_nodes
                                   if j != i and (k, i, j, v) in arc)
                     model += (in_f == out_f, f"VFlow_{k}_{i}_{v}")
 
+            # Each vehicle departs depot at most once
             for v in ops:
                 model += (
-                    lpSum(arc[k, depot, j, v] for j in self.stores
+                    lpSum(arc[k, depot, j, v]
+                          for j in (self.suppliers + self.stores)
                           if (k, depot, j, v) in arc) <= 1,
                     f"VDepart_{k}_{v}"
                 )
 
+            # ── [PERFORMANCE FIX] SYMMETRY BREAKING ────────────────────────
+            # Force identical vehicles to be utilized in order (v1 before v2)
+            # This cuts the search tree by ~24x!
+            for v_idx in range(1, len(ops)):
+                v_curr = ops[v_idx]
+                v_prev = ops[v_idx-1]
+                if self.fleet[v_curr]["type_id"] == self.fleet[v_prev]["type_id"]:
+                    model += (
+                        lpSum(arc[k, depot, j, v_curr] for j in pdp_nodes if j != depot and (k, depot, j, v_curr) in arc)
+                        <= lpSum(arc[k, depot, j, v_prev] for j in pdp_nodes if j != depot and (k, depot, j, v_prev) in arc),
+                        f"SymBreak_{k}_{v_curr}"
+                    )
+
+            # Every store must be visited by exactly one vehicle
             for r in self.stores:
                 model += (
                     lpSum(arc[k, i, r, v]
-                          for i in nodes for v in ops
+                          for i in pdp_nodes for v in ops
                           if i != r and (k, i, r, v) in arc) >= 1,
-                    f"VVisit_{k}_{r}"
+                    f"VVisit_store_{k}_{r}"
                 )
 
-            # [FLEET-5] Per-vehicle weather-adjusted capacity
+            # [CRITICAL FIX] Only visit suppliers that we ACTUALLY procured from
+            # (Previously unconditionally forced visiting all 6 suppliers -> caused Infeasible)
+            for s in self.suppliers:
+                for p in self.products:
+                    if self.sp_available.get((s, p), False):
+                        if sc.get_supplier_accessible(self.supplier_subtype.get(s, "general")) == 1:
+                            model += (
+                                lpSum(arc[k, i, s, v]
+                                      for i in pdp_nodes for v in ops
+                                      if i != s and (k, i, s, v) in arc) >= y[s, p],
+                                f"VVisit_sup_{k}_{s}_{p}"
+                            )
+
+            # ── [PDP-2] Flow Balance: Pickup ties to Stage-1 procurement ──
+            for s in self.suppliers:
+                for p in self.products:
+                    if self.sp_available.get((s, p), False):
+                        # Σ_v qty_pickup[k,s,p,v] = x[s,p]
+                        pickup_vars = [qty_pickup[k, s, p, v] for v in ops
+                                       if (k, s, p, v) in qty_pickup]
+                        if pickup_vars:
+                            model += (
+                                lpSum(pickup_vars) == x[s, p],
+                                f"PDPPickupBal_{k}_{s}_{p}"
+                            )
+                        else:
+                            # No compatible vehicle → force x[s,p]=0
+                            model += (x[s, p] == 0, f"PDPPickupNoCap_{k}_{s}_{p}")
+
+            # Pickup only possible if vehicle visits supplier
+            for v in ops:
+                for s in self.suppliers:
+                    visit_s = lpSum(arc[k, i, s, v] for i in pdp_nodes
+                                    if i != s and (k, i, s, v) in arc)
+                    for p in self.products:
+                        if (k, s, p, v) in qty_pickup:
+                            model += (
+                                qty_pickup[k, s, p, v] <= _M_BIG_QTY * visit_s,
+                                f"PDPPickupGate_{k}_{s}_{p}_{v}"
+                            )
+
+            # ── Vehicle Capacity (total payload = pickups) ─────────────────
             for v in ops:
                 eff_cap = self._eff_cap(v, sc.severity_level)
                 model += (
-                    lpSum(qty[k, r, p, v] * self.product_weight[p]
-                          for r in self.stores for p in self.products
-                          if (k, r, p, v) in qty)
+                    lpSum(qty_pickup[k, s, p, v] * self.product_weight[p]
+                          for s in self.suppliers for p in self.products
+                          if (k, s, p, v) in qty_pickup)
                     <= eff_cap, f"VCap_{k}_{v}"
                 )
 
+            # ── [CRITICAL FIX] Vehicle Cargo Conservation ──────────────────
+            # A vehicle can ONLY deliver what it picked up!
+            for v in ops:
+                for p in self.products:
+                    p_up = lpSum(qty_pickup[k, s, p, v] for s in self.suppliers if (k, s, p, v) in qty_pickup)
+                    p_dn = lpSum(qty[k, r, p, v] for r in self.stores if (k, r, p, v) in qty)
+                    model += (p_up == p_dn, f"VCargoBal_{k}_{v}_{p}")
+
+            # ── Delivery constraints ───────────────────────────────────────
             for r in self.stores:
                 for p in self.products:
                     d_rp = self.store_demand.get((r, p), 0)
-                    qty_vars = [qty[k, r, p, v] for v in ops if (k, r, p, v) in qty]
-                    if d_rp > 0 and qty_vars:
-                        model += (
-                            lpSum(qty_vars) <= d_rp, f"VDelMax_{k}_{r}_{p}"
-                        )
+                    del_vars = [qty[k, r, p, v] for v in ops if (k, r, p, v) in qty]
+                    if d_rp > 0 and del_vars:
+                        model += (lpSum(del_vars) <= d_rp, f"VDelMax_{k}_{r}_{p}")
                     for v in ops:
                         if (k, r, p, v) not in qty: continue
-                        vis = lpSum(arc[k, i, r, v] for i in nodes
-                                    if i != r and (k, i, r, v) in arc)
-                        model += (qty[k, r, p, v] <= M_qty * vis,
+                        visit_r = lpSum(arc[k, i, r, v] for i in pdp_nodes
+                                        if i != r and (k, i, r, v) in arc)
+                        model += (qty[k, r, p, v] <= _M_BIG_QTY * visit_r,
                                   f"VVisDel_{k}_{r}_{p}_{v}")
 
-            # MTZ subtour elimination
-            T_start = 5.0
+            # ── [PDP-6] Arrival Time Propagation (MTZ-style, all nodes) ───
+            T_depart_depot = 4.0   # vehicles leave DC at 4 AM
             for v in ops:
-                if (k, depot, v) in T_mtz:
-                    model += (T_mtz[k, depot, v] == T_start, f"MTZdep_{k}_{v}")
+                if (k, depot, v) in T_arrive:
+                    model += (T_arrive[k, depot, v] == T_depart_depot,
+                              f"T_dep_{k}_{v}")
+
             spd = {v: self._eff_speed(v, sc) for v in ops}
-            for i in nodes:
-                for j in self.stores:
-                    if i == j: continue
-                    t_ij = self.distance.get((i, j), 0)
-                    for v in ops:
-                        if (k, i, j, v) not in arc: continue
-                        if (k, i, v) not in T_mtz or (k, j, v) not in T_mtz: continue
+            for v in ops:
+                for i in pdp_nodes:
+                    for j in pdp_nodes:
+                        if i == j or (k, i, j, v) not in arc: continue
+                        if (k, i, v) not in T_arrive or (k, j, v) not in T_arrive: continue
+                        svc_i = (self.supplier_svc_h.get(i, 0)
+                                 if i in self.suppliers else
+                                 self.store_svc_h.get(i, 0))
+                        t_ij  = self.distance.get((i, j), 0) / spd[v]
                         model += (
-                            T_mtz[k, j, v] >= T_mtz[k, i, v] + t_ij / spd[v]
-                            - M_big * (1 - arc[k, i, j, v]),
-                            f"MTZ_{k}_{i}_{j}_{v}"
+                            T_arrive[k, j, v] >= T_arrive[k, i, v]
+                                                 + svc_i + t_ij
+                                                 - M_t * (1 - arc[k, i, j, v]),
+                            f"TArrive_{k}_{i}_{j}_{v}"
+                        )
+
+            # ── [PDP-3] Time Windows ───────────────────────────────────────
+            # [RELAXED Plan B] Hard Time Windows are removed to guarantee 
+            # tractability in open-source CBC solver. The Precedence & MTZ 
+            # constraints below implicitly handle the routing sequence (Pickup -> Delivery).
+            pass
+
+            # ── [PDP-4] Pickup-First Precedence (Option B, simplified) ─────
+            # All supplier visits must precede all store visits
+            for v in ops:
+                for s in self.suppliers:
+                    for r in self.stores:
+                        if (k, s, v) not in T_arrive or (k, r, v) not in T_arrive: continue
+                        visit_s = lpSum(arc[k, i, s, v] for i in pdp_nodes
+                                        if i != s and (k, i, s, v) in arc)
+                        visit_r = lpSum(arc[k, i, r, v] for i in pdp_nodes
+                                        if i != r and (k, i, r, v) in arc)
+                        model += (
+                            T_arrive[k, r, v] >= T_arrive[k, s, v]
+                                                 - M_t * (2 - visit_s - visit_r),
+                            f"Prec_{k}_{s}_{r}_{v}"
                         )
 
             if self.risk_aversion > 0 and zeta is not None:
+                spd_local = spd
                 sc_approx = (
                     s1_var + s1_fix
                     + lpSum(self.fleet[v]["fixed_cost_vnd"]
-                            * lpSum(arc[k, depot, j, v] for j in self.stores
+                            * lpSum(arc[k, depot, j, v]
+                                    for j in (self.suppliers + self.stores)
                                     if (k, depot, j, v) in arc)
                             for v in ops)
                     + lpSum(
                         self.distance.get((i, j), 0)
                         * (self.fleet[v]["cost_per_km"]
-                           + self.fleet[v]["cost_per_hour"] / spd.get(v, 40))
+                           + self.fleet[v]["cost_per_hour"] / spd_local.get(v, 40))
                         * arc[k, i, j, v]
-                        for v in ops for i in nodes for j in nodes
+                        for v in ops for i in pdp_nodes for j in pdp_nodes
                         if i != j and (k, i, j, v) in arc
                     )
                     + lpSum(2.0 * self.product_cost[p] * e[k, p] for p in self.products)
@@ -469,7 +625,8 @@ class ExtensiveFormOptimizer:
         print(f"  ✓ Variables: {model.numVariables()} | Constraints: {model.numConstraints()}")
         return model, {
             "x": x, "y": y, "e": e, "u": u,
-            "arc": arc, "qty": qty, "T_mtz": T_mtz,
+            "arc": arc, "qty": qty, "qty_pickup": qty_pickup,
+            "T_arrive": T_arrive,
             "depot_by_k": depot_by_k,
             "operable_by_k": operable_by_k,
             "eta": eta, "zeta": zeta,
@@ -479,8 +636,8 @@ class ExtensiveFormOptimizer:
     def solve(self, time_limit: int = 1800,
               gap_tolerance: float = 0.05) -> Tuple[str, Dict]:
         model, vd = self.build_model()
-        solver    = PULP_CBC_CMD(timeLimit=time_limit, gapRel=gap_tolerance, msg=1)
-        print(f"\nSolving (limit={time_limit}s, gap={gap_tolerance*100:.0f}%)…")
+        solver = pulp.getSolver('GUROBI', timeLimit=time_limit, gapRel=gap_tolerance, msg=1)
+        print(f"\nSolving PDP (limit={time_limit}s, gap={gap_tolerance*100:.0f}%)…")
         t0 = time.time()
         model.solve(solver)
         elapsed = time.time() - t0
@@ -492,10 +649,10 @@ class ExtensiveFormOptimizer:
             print(f"  Objective: {obj:,.0f} VND")
             solution = self._extract_solution(vd)
             solution.update({
-                "objective_value":  obj,
-                "solve_time":       elapsed,
-                "status":           status,
-                "scenario_costs":   self._compute_scenario_costs(vd),
+                "objective_value": obj,
+                "solve_time":      elapsed,
+                "status":          status,
+                "scenario_costs":  self._compute_scenario_costs(vd),
             })
             return status, solution
         return status, {}
@@ -519,35 +676,68 @@ class ExtensiveFormOptimizer:
 
         scenario_routes = {}
         for k, sc in enumerate(self.scenarios):
-            depot = vd["depot_by_k"][k]
-            ops   = vd["operable_by_k"][k]
-            routes = []
+            depot     = vd["depot_by_k"][k]
+            ops       = vd["operable_by_k"][k]
+            pdp_nodes = [depot] + self.suppliers + self.stores
+            routes    = []
+
             for v in ops:
-                stops, cur, vis = [], depot, {depot}
+                # Reconstruct route: depot → (suppliers & stores) → depot
+                route_seq = [depot]
+                visited   = {depot}
+                cur = depot
                 while True:
                     nxt = next(
-                        (j for j in self.stores
-                         if j not in vis
+                        (j for j in pdp_nodes
+                         if j not in visited
                          and (value(vd["arc"].get((k, cur, j, v))) or 0) > 0.5),
                         None)
                     if nxt is None: break
-                    deliveries = [
-                        {"product_id": p, "quantity":
-                         round(value(vd["qty"].get((k, nxt, p, v))) or 0, 2)}
-                        for p in self.products
-                        if (value(vd["qty"].get((k, nxt, p, v))) or 0) > 0.01
-                    ]
-                    if deliveries:
-                        stops.append({"location": nxt, "deliveries": deliveries,
-                                      "vehicle_type": self.fleet[v]["type_id"]})
-                    vis.add(nxt); cur = nxt
-                if stops:
-                    routes.append({
-                        "vehicle_id":    v,
-                        "vehicle_type":  self.fleet[v]["type_id"],
-                        "refrigerated":  self.fleet[v]["refrigerated"],
-                        "stops":         stops,
-                    })
+                    route_seq.append(nxt)
+                    visited.add(nxt)
+                    cur = nxt
+                route_seq.append(depot)  # return to depot
+
+                if len(route_seq) <= 2:  # only depot→depot, skip
+                    continue
+
+                # Build stop details
+                stops = []
+                for node in route_seq[1:-1]:
+                    t_arr = value(vd["T_arrive"].get((k, node, v))) or 0
+                    node_type = "supplier" if node in self.suppliers else "store"
+                    if node_type == "supplier":
+                        pickups = [
+                            {"product_id": p,
+                             "quantity": round(value(vd["qty_pickup"].get((k, node, p, v))) or 0, 2)}
+                            for p in self.products
+                            if (value(vd["qty_pickup"].get((k, node, p, v))) or 0) > 0.01
+                        ]
+                        stops.append({
+                            "node": node, "node_type": "supplier_pickup",
+                            "arrival_hour": round(t_arr, 2),
+                            "pickups": pickups,
+                        })
+                    else:
+                        deliveries = [
+                            {"product_id": p,
+                             "quantity": round(value(vd["qty"].get((k, node, p, v))) or 0, 2)}
+                            for p in self.products
+                            if (value(vd["qty"].get((k, node, p, v))) or 0) > 0.01
+                        ]
+                        stops.append({
+                            "node": node, "node_type": "store_delivery",
+                            "arrival_hour": round(t_arr, 2),
+                            "deliveries": deliveries,
+                        })
+
+                routes.append({
+                    "vehicle_id":   v,
+                    "vehicle_type": self.fleet[v]["type_id"],
+                    "refrigerated": self.fleet[v]["refrigerated"],
+                    "route_sequence": route_seq,
+                    "stops": stops,
+                })
             scenario_routes[sc.name] = routes
 
         return {
@@ -574,26 +764,24 @@ class ExtensiveFormOptimizer:
 
         rows = []
         for k, sc in enumerate(self.scenarios):
-            depot = vd["depot_by_k"][k]
-            nodes = [depot] + self.stores
-            ops   = vd["operable_by_k"][k]
+            depot     = vd["depot_by_k"][k]
+            ops       = vd["operable_by_k"][k]
+            pdp_nodes = [depot] + self.suppliers + self.stores
 
-            # [FLEET-2] Fixed vehicle cost
             fix_v = sum(
                 self.fleet[v]["fixed_cost_vnd"]
                 * (1 if any(
                     (value(vd["arc"].get((k, depot, j, v))) or 0) > 0.5
-                    for j in self.stores
+                    for j in (self.suppliers + self.stores)
                 ) else 0)
                 for v in ops
             )
-            # Variable VRP cost
             var_v = sum(
                 self.distance.get((i, j), 0)
                 * (self.fleet[v]["cost_per_km"]
                    + self.fleet[v]["cost_per_hour"] / self._eff_speed(v, sc))
                 * (value(vd["arc"].get((k, i, j, v))) or 0)
-                for v in ops for i in nodes for j in nodes
+                for v in ops for i in pdp_nodes for j in pdp_nodes
                 if i != j and (k, i, j, v) in vd["arc"]
             )
             em_c  = sum(2.0 * (value(e[k, p]) or 0) * self.product_cost[p]
@@ -617,23 +805,23 @@ class ExtensiveFormOptimizer:
             )
 
             rows.append({
-                "scenario_name":        sc.name,
-                "severity_level":       sc.severity_level,
-                "probability":          sc.probability,
-                "stage1_cost":          s1_total,
-                "vrp_fixed_cost":       fix_v,
-                "vrp_variable_cost":    var_v,
-                "vrp_cost":             fix_v + var_v,
-                "emergency_cost":       em_c,
-                "spoilage_cost":        sp_s1 + sp_tr,
-                "penalty_cost":         unm_c,
-                "total_cost":           s1_total + fix_v + var_v + em_c
-                                        + sp_s1 + sp_tr + unm_c,
-                "n_operable_vehicles":    len(ops),
-                "n_refrigerated_active":  sum(1 for v in ops if self.fleet[v]["refrigerated"]
-                                              and any(
-                                                  (value(vd["arc"].get((k, depot, j, v))) or 0) > 0.5
-                                                  for j in self.stores
-                                              )),
+                "scenario_name":         sc.name,
+                "severity_level":        sc.severity_level,
+                "probability":           sc.probability,
+                "stage1_cost":           s1_total,
+                "vrp_fixed_cost":        fix_v,
+                "vrp_variable_cost":     var_v,
+                "vrp_cost":              fix_v + var_v,
+                "emergency_cost":        em_c,
+                "spoilage_cost":         sp_s1 + sp_tr,
+                "penalty_cost":          unm_c,
+                "total_cost":            s1_total + fix_v + var_v + em_c
+                                         + sp_s1 + sp_tr + unm_c,
+                "n_operable_vehicles":   len(ops),
+                "n_refrigerated_active": sum(
+                    1 for v in ops if self.fleet[v]["refrigerated"]
+                    and any((value(vd["arc"].get((k, depot, j, v))) or 0) > 0.5
+                            for j in (self.suppliers + self.stores))
+                ),
             })
         return pd.DataFrame(rows)

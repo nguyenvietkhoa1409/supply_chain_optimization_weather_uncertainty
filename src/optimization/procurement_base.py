@@ -168,6 +168,18 @@ class ProcurementOptimizer:
                       if self.sp_available.get((s, p), False)]) <= capacity,
                 f"Capacity_{s}"
             )
+            
+        # [FIX-CONCENTRATION] Max Supplier Concentration Risk Constraint
+        max_concentration_ratio = 0.40
+        for p in self.products:
+            demand = self.total_demand.get(p, 0)
+            if demand > 0:
+                for s in self.suppliers:
+                    if self.sp_available.get((s, p), False):
+                        model += (
+                            x[s, p] <= max_concentration_ratio * demand,
+                            f"Concentration_Risk_{s}_{p}"
+                        )
         
         # 3. MOQ logic: if y[s,p]=1, then x[s,p] >= MOQ
         M = 100000  # Big-M for logical constraints

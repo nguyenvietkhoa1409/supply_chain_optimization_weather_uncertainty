@@ -4,10 +4,10 @@ STOCHASTIC OPTIMIZATION VALIDATION REPORT  (Fixed: M-1, M-2, M-3)
 
 1. VALUE OF STOCHASTIC SOLUTION (VSS)
 --------------------------------------------------------------------------------
-  EEV  (Expected cost of EV solution):        5,903,012,685 VND
-  RP   (Stochastic recourse problem):         3,691,403,494 VND
-  VSS  = EEV - RP:                            2,211,609,192 VND
-  VSS%:                                               37.47%
+  EEV  (Expected cost of EV solution):          206,599,300 VND
+  RP   (Stochastic recourse problem):           164,467,206 VND
+  VSS  = EEV - RP:                               42,132,095 VND
+  VSS%:                                               20.39%
 
   → Substantial benefit — stochastic approach essential
 
@@ -16,10 +16,10 @@ STOCHASTIC OPTIMIZATION VALIDATION REPORT  (Fixed: M-1, M-2, M-3)
 
 2. EXPECTED VALUE OF PERFECT INFORMATION (EVPI)
 --------------------------------------------------------------------------------
-  RP   (Stochastic solution):                 3,691,403,494 VND
-  WS   (Wait-and-see, K solves):              3,255,626,126 VND
-  EVPI = RP - WS:                               435,777,368 VND
-  EVPI%:                                              11.81%
+  RP   (Stochastic solution):                   164,467,206 VND
+  WS   (Wait-and-see, K solves):                137,736,799 VND
+  EVPI = RP - WS:                                26,730,406 VND
+  EVPI%:                                              16.25%
 
   → Very high value — perfect forecasts highly valuable
 
@@ -28,61 +28,61 @@ STOCHASTIC OPTIMIZATION VALIDATION REPORT  (Fixed: M-1, M-2, M-3)
 
 3. ORDERING PROPERTY  (WS ≤ RP ≤ EEV)
 --------------------------------------------------------------------------------
-  WS  =        3,255,626,126 VND
-  RP  =        3,691,403,494 VND
-  EEV =        5,903,012,685 VND
+  WS  =          137,736,799 VND
+  RP  =          164,467,206 VND
+  EEV =          206,599,300 VND
   WS ≤ RP:   ✓ PASS
   RP ≤ EEV:  ✓ PASS
 
 4. SCENARIO-WISE COST BREAKDOWN  (Recourse Problem)
 --------------------------------------------------------------------------------
-  Normal Monsoon Day              p=0.18  cost= 2,711,071,795 VND
-  Normal Monsoon Day              p=0.17  cost= 2,713,702,324 VND
-  Light Rain                      p=0.11  cost= 2,718,699,336 VND
-  Light Rain                      p=0.10  cost= 2,713,908,158 VND
-  Light Rain                      p=0.06  cost= 2,711,357,734 VND
-  Light Rain                      p=0.06  cost= 2,710,442,827 VND
-  Moderate Rain                   p=0.07  cost= 2,711,306,116 VND
-  Moderate Rain                   p=0.05  cost= 2,720,017,540 VND
-  Heavy Rain                      p=0.10  cost= 5,283,359,949 VND
-  Tropical Storm/Typhoon (data-driven)  p=0.09  cost=10,426,987,196 VND
+  Normal Monsoon Day              p=0.18  cost=   106,431,877 VND
+  Normal Monsoon Day              p=0.17  cost=   106,431,877 VND
+  Light Rain                      p=0.11  cost=   106,444,476 VND
+  Light Rain                      p=0.10  cost=   106,683,866 VND
+  Light Rain                      p=0.06  cost=   106,572,320 VND
+  Light Rain                      p=0.06  cost=   106,864,886 VND
+  Moderate Rain                   p=0.07  cost=   106,604,846 VND
+  Moderate Rain                   p=0.05  cost=   106,571,724 VND
+  Heavy Rain                      p=0.10  cost=   191,598,730 VND
+  Tropical Storm/Typhoon (data-driven)  p=0.09  cost=   631,523,073 VND
 
-  Mean:   3,742,085,297 VND
-  Worst: 10,426,987,196 VND
-  Best:   2,710,442,827 VND
-  CV:    66.37%
+  Mean:     167,572,768 VND
+  Worst:    631,523,073 VND
+  Best:     106,431,877 VND
+  CV:    98.58%
 
 5. EEV BREAKDOWN BY SCENARIO
 --------------------------------------------------------------------------------
-  Normal Monsoon Day              p=0.18  cost_k= 2,608,879,376 VND
-  Normal Monsoon Day              p=0.17  cost_k= 2,608,879,376 VND
-  Light Rain                      p=0.11  cost_k= 2,612,443,109 VND
-  Light Rain                      p=0.10  cost_k= 2,612,443,109 VND
-  Light Rain                      p=0.06  cost_k= 2,612,443,109 VND
-  Light Rain                      p=0.06  cost_k= 2,612,443,109 VND
-  Moderate Rain                   p=0.07  cost_k= 2,664,592,642 VND
-  Moderate Rain                   p=0.05  cost_k= 2,664,592,642 VND
-  Heavy Rain                      p=0.10  cost_k=13,304,361,971 VND
-  Tropical Storm/Typhoon (data-driven)  p=0.09  cost_k=26,448,663,627 VND
+  Normal Monsoon Day              p=0.18  cost_k=    75,384,451 VND
+  Normal Monsoon Day              p=0.17  cost_k=    75,384,451 VND
+  Light Rain                      p=0.11  cost_k=    75,384,451 VND
+  Light Rain                      p=0.10  cost_k=    75,384,451 VND
+  Light Rain                      p=0.06  cost_k=    75,384,451 VND
+  Light Rain                      p=0.06  cost_k=    75,384,451 VND
+  Moderate Rain                   p=0.07  cost_k=    75,384,451 VND
+  Moderate Rain                   p=0.05  cost_k=    75,384,451 VND
+  Heavy Rain                      p=0.10  cost_k=   540,445,985 VND
+  Tropical Storm/Typhoon (data-driven)  p=0.09  cost_k=   988,716,587 VND
 
 6. WAIT-AND-SEE (WS) BREAKDOWN BY SCENARIO
 --------------------------------------------------------------------------------
-  Normal Monsoon Day              p=0.18  OPT_k= 2,345,367,385 VND  (0.8s)
-  Normal Monsoon Day              p=0.17  OPT_k= 2,345,367,385 VND  (0.8s)
-  Light Rain                      p=0.11  OPT_k= 2,342,463,324 VND  (0.8s)
-  Light Rain                      p=0.10  OPT_k= 2,342,463,324 VND  (0.8s)
-  Light Rain                      p=0.06  OPT_k= 2,342,463,324 VND  (0.8s)
-  Light Rain                      p=0.06  OPT_k= 2,342,463,324 VND  (0.8s)
-  Moderate Rain                   p=0.07  OPT_k= 2,346,332,984 VND  (0.9s)
-  Moderate Rain                   p=0.05  OPT_k= 2,346,332,984 VND  (1.0s)
-  Heavy Rain                      p=0.10  OPT_k= 4,333,056,402 VND  (0.7s)
-  Tropical Storm/Typhoon (data-driven)  p=0.09  OPT_k= 9,943,963,909 VND  (0.1s)
+  Normal Monsoon Day              p=0.18  OPT_k=    85,135,513 VND  (0.6s)
+  Normal Monsoon Day              p=0.17  OPT_k=    85,135,513 VND  (0.7s)
+  Light Rain                      p=0.11  OPT_k=    85,188,064 VND  (0.6s)
+  Light Rain                      p=0.10  OPT_k=    85,188,064 VND  (0.6s)
+  Light Rain                      p=0.06  OPT_k=    85,188,064 VND  (0.6s)
+  Light Rain                      p=0.06  OPT_k=    85,188,064 VND  (0.6s)
+  Moderate Rain                   p=0.07  OPT_k=    85,162,520 VND  (1.1s)
+  Moderate Rain                   p=0.05  OPT_k=    85,162,520 VND  (1.0s)
+  Heavy Rain                      p=0.10  OPT_k=   153,432,123 VND  (0.8s)
+  Tropical Storm/Typhoon (data-driven)  p=0.09  OPT_k=   570,623,600 VND  (0.1s)
 
 ================================================================================
 CONCLUSION
 ================================================================================
 ✓ Stochastic solution has SUBSTANTIAL value over deterministic
-✓ Weather forecasting has VERY HIGH value (11.8%) — invest in monitoring
+✓ Weather forecasting has VERY HIGH value (16.3%) — invest in monitoring
 ✓ Ordering property WS ≤ RP ≤ EEV verified — model is consistent
 ================================================================================
 
@@ -90,26 +90,26 @@ CONCLUSION
 5. RISK ANALYSIS  (CVaR-90%)
 --------------------------------------------------------------------------------
   Distribution shape:
-    Expected cost:              3,691,403,494 VND
-    Std deviation:              2,306,113,112 VND
-    CV (σ/μ):                           62.5%
-    Best case:                  2,710,442,827 VND
-    Worst case:                10,426,987,196 VND
+    Expected cost:                164,467,206 VND
+    Std deviation:                153,192,001 VND
+    CV (σ/μ):                           93.1%
+    Best case:                    106,431,877 VND
+    Worst case:                   631,523,073 VND
 
   Tail risk metrics:
-    VaR-90%:                    5,283,359,949 VND
-    CVaR-90%:                  10,159,802,874 VND
-    CVaR premium:               6,468,399,380 VND
-    CVaR premium %:                    175.2%
+    VaR-90%:                      191,598,730 VND
+    CVaR-90%:                     608,671,323 VND
+    CVaR premium:                 444,204,117 VND
+    CVaR premium %:                    270.1%
 
   Risk-adjusted objective (λ=0.3):
-    (1-λ)·E[cost]+λ·CVaR:       5,631,923,308 VND
+    (1-λ)·E[cost]+λ·CVaR:         297,728,441 VND
 
   Tail scenarios (cost > VaR, p_mass=9.5%):
-    Tropical Storm/Typhoon (data-driven)     p=0.095  cost= 10,426,987,196 VND
+    Tropical Storm/Typhoon (data-driven)     p=0.095  cost=    631,523,073 VND
 
   → Implication: Risk-neutral procurement (minimize E[cost]) acceptable
-    ONLY if operator tolerates 175.2% higher cost
+    ONLY if operator tolerates 270.1% higher cost
     in worst-case scenarios. Recommend CVaR-aware procurement for
     food security applications.
 ================================================================================
