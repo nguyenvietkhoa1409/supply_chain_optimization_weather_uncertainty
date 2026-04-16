@@ -6,8 +6,6 @@ UPDATED v2: Heterogeneous Fleet (Patel et al. adaptation)
 
 import os
 import sys
-import os
-os.environ['GRB_LICENSE_FILE'] = r'D:\gurobi.lic'
 from typing import Dict
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
@@ -113,9 +111,15 @@ def main():
     print(f"  Refrigerated products: {products['requires_refrigeration'].sum()}/{len(products)}")
 
     # ── STEP 2: Weather scenarios ──────────────────────────────────────────
-    # [SCALED] Fixed to monsoon, K=4 scenarios (was interactive: target_count=5)
-    scenarios   = get_data_driven_scenarios(season="monsoon", target_count=4)
-    season_name = "Monsoon Season"
+    season = input("\nSeason (1=Dry, 2=Monsoon): ").strip()
+    if season == "1":
+        scenarios   = ManualWeatherScenarios.create_dry_season_scenarios()
+        season_name = "Dry Season"
+    else:
+        # scenarios   = ManualWeatherScenarios.create_monsoon_season_scenarios()
+        # season_name = "Monsoon Season"
+        scenarios = get_data_driven_scenarios(season="monsoon")
+        season_name = "Monsoon Season"
 
     total_p = sum(s.probability for s in scenarios)
     if abs(total_p - 1.0) > 0.01:
@@ -252,12 +256,6 @@ def main():
     sc_costs.to_csv(os.path.join(results_dir, "scenario_costs_fixed.csv"), index=False)
     eev_breakdown.to_csv(os.path.join(results_dir, "eev_breakdown.csv"), index=False)
     ws_breakdown.to_csv(os.path.join(results_dir, "ws_breakdown.csv"), index=False)
-
-    # [PDP] Save scenario routes (pickup + delivery sequences)
-    import json as _json
-    scenario_routes = rp_solution.get("scenario_routes", {})
-    with open(os.path.join(results_dir, "scenario_routes_fixed.json"), "w", encoding="utf-8") as f:
-        _json.dump(scenario_routes, f, indent=2, ensure_ascii=False)
 
     if vehicle_dispatch:
         rows = []

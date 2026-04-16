@@ -37,7 +37,7 @@ VEHICLE_TYPES = [
         # Analogous to Patel Type 1 (1,000 kg) but scaled down for Da Nang micro-routes
         "type_id":              "mini_van",
         "name_vn":              "Xe tải mini (300 kg)",
-        "count":                1,                  # [SCALED] 1 unit (was 3) — matches reduced S=4, R=5 network
+        "count":                3,                  # 3 units in fleet
 
         # ── Capacity ──────────────────────────────────────────────────
         "payload_kg":           300,                # maximum weight load
@@ -64,7 +64,7 @@ VEHICLE_TYPES = [
         # Analogous to Patel Type 1 (1,000 kg) — direct equivalent
         "type_id":              "light_truck",
         "name_vn":              "Xe tải nhỏ (1,000 kg)",
-        "count":                1,                  # [SCALED] 1 unit (was 2)
+        "count":                2,
 
         "payload_kg":           1_000,
         "volume_m3":            3.0,
@@ -85,7 +85,7 @@ VEHICLE_TYPES = [
         # No direct Patel equivalent; added as Da Nang extension for seafood/meat
         "type_id":              "ref_truck",
         "name_vn":              "Xe tải lạnh (1,500 kg)",
-        "count":                1,                  # [SCALED] 1 unit (was 2) — sole refrigerated vehicle
+        "count":                2,
 
         "payload_kg":           1_500,
         "volume_m3":            5.0,
