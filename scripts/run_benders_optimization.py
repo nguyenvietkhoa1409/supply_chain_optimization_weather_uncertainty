@@ -91,14 +91,20 @@ CONCENTRATION_MAX        = 0.40     # max share of 1 supplier per product
 MAX_PRODUCTS_PER_SUPPLIER = 6       # [FIX-C3] diversification constraint
 UNMET_PENALTY_VND        = 500_000  # [FIX-C2] 5x product cost avg (was 100k)
 SPOIL_BASE_RATE          = 0.04
-BENDERS_MAX_ITER         = 2
-BENDERS_TOL              = 0.90     # Stop immediately to get output
-MASTER_TIME              = 180      # 3 min master solve
-LP_SUB_TIME              = 30       # LP barrier solve (fast)
-MIP_SUB_TIME             = 180      # 3 min per MIP subproblem (balanced)
-SUB_GAP                  = 0.05     # 5% MIP gap (must keep tight — loose gap inflates UB!)
+BENDERS_MAX_ITER         = 20       # [P1 FIX] Proper convergence (typ. 8-15 iters for this scale)
+BENDERS_TOL              = 0.05     # [P1 FIX] 5% gap tolerance — academic standard (was 90%)
+MASTER_TIME              = 300      # 5 min master solve
+LP_SUB_TIME              = 60       # LP barrier solve
+MIP_SUB_TIME             = 300      # 5 min per MIP subproblem
+SUB_GAP                  = 0.02     # [P1 FIX] 2% MIP gap for tighter UB (was 5%)
 _M_ROUTE                 = 9_999_999
 _MIN_CAP_KG              = 10
+
+# [FIX-4] Logistics cost scale multiplier for diagnostic testing.
+# Set to 1.0 for production. Set to 5.0 or 10.0 to test if weak-cut
+# stagnation is caused by logistics cost being too small relative to procurement.
+# If LB starts improving with scale > 1, cost imbalance is confirmed.
+LOGISTICS_COST_SCALE = 1  # ← change to 5.0 or 10.0 for Fix-4 diagnostic
 
 # [FIX-C1] Logistics cost multipliers (Vietnamese market rates 2024)
 # Maps original fleet type_id → (fixed_cost_vnd/day, cost_per_km_vnd)
@@ -135,15 +141,22 @@ def load_data():
 
 
 def apply_realistic_costs(fleet_opt):
-    """[FIX-C1] Override vehicle costs with Vietnamese market rates 2024."""
+    """[FIX-C1] Override vehicle costs with Vietnamese market rates 2024.
+    [FIX-4]  LOGISTICS_COST_SCALE multiplier applied for diagnostic testing.
+             Set LOGISTICS_COST_SCALE > 1.0 to verify if weak-cut stagnation
+             is caused by cost imbalance (logistics too small vs procurement).
+    """
     updated = []
     for v in fleet_opt:
         v2 = dict(v)
         tid = v2.get("type_id", "mini_van")
         if tid in REALISTIC_VEHICLE_COSTS:
-            v2["fixed_cost_vnd"] = REALISTIC_VEHICLE_COSTS[tid]["fixed"]
-            v2["cost_per_km"]    = REALISTIC_VEHICLE_COSTS[tid]["per_km"]
+            v2["fixed_cost_vnd"] = int(REALISTIC_VEHICLE_COSTS[tid]["fixed"] * LOGISTICS_COST_SCALE)
+            v2["cost_per_km"]    = int(REALISTIC_VEHICLE_COSTS[tid]["per_km"] * LOGISTICS_COST_SCALE)
         updated.append(v2)
+    if LOGISTICS_COST_SCALE != 1.0:
+        print(f"  ⚠ [FIX-4 DIAGNOSTIC] LOGISTICS_COST_SCALE={LOGISTICS_COST_SCALE}x active — "
+              f"results NOT for production use.")
     return updated
 
 
@@ -179,6 +192,11 @@ class MasterProblem:
         self.prod_info = products.set_index("id")
         self.sup_info  = suppliers.set_index("id")
         self.sp_set    = set(zip(sp_matrix["supplier_id"], sp_matrix["product_id"]))
+        # [P3 FIX] Negotiated supplier-product prices from sp_matrix (replaces list price)
+        self.sp_cost   = {
+            (row["supplier_id"], row["product_id"]): row["unit_cost_vnd"]
+            for _, row in sp_matrix.iterrows()
+        }
         self.store_dem = {}
         for _, row in daily_demand.iterrows():
             self.store_dem[(row["store_id"], row["product_id"])] = row["demand_units"]
@@ -196,15 +214,23 @@ class MasterProblem:
              for s in self.sup_ids for p in self.prod_ids if (s, p) in self.sp_set}
         y = {(s, p): LpVariable(f"y_{s}_{p}", cat="Binary")
              for s in self.sup_ids for p in self.prod_ids if (s, p) in self.sp_set}
-        theta = LpVariable("theta", lowBound=0)
 
-        # Procurement + spoilage
+        # [FIX-1] Multi-cut Benders: K separate theta_k instead of 1 aggregated theta.
+        # Tighter lower bound: each scenario's recourse cost is bounded individually.
+        # Master objective: min f_proc + Σ_k p_k * theta_k
+        K = len(self.scenarios)
+        theta_k = {k: LpVariable(f"theta_{k}", lowBound=0) for k in range(K)}
+        # Keep single theta alias pointing at weighted sum (for compatibility)
+        theta = theta_k  # dict of K vars; accessed as theta[k] in cuts
+
+        # [P3 FIX] Procurement cost: negotiated sp_matrix prices, fallback to list price
         proc_cost = lpSum(
-            self.prod_info.loc[p, "unit_cost_vnd"] * x[s, p] for (s, p) in x
+            self.sp_cost.get((s, p), self.prod_info.loc[p, "unit_cost_vnd"]) * x[s, p]
+            for (s, p) in x
         )
         spoil_cost = lpSum(
             sc.probability * SPOIL_BASE_RATE * sc.spoilage_multiplier
-            * self.prod_info.loc[p, "unit_cost_vnd"] * x[s, p]
+            * self.sp_cost.get((s, p), self.prod_info.loc[p, "unit_cost_vnd"]) * x[s, p]
             for sc in self.scenarios for (s, p) in x
         )
 
@@ -218,15 +244,19 @@ class MasterProblem:
             for r in self.sto_ids for p in self.prod_ids
         )
 
-        # Supplier activation fixed cost
-        ACTIVATION_SCALE = 0.05
+        # [P1 FIX] Supplier activation fixed cost — full value (removed 0.05 artificial scale)
         activation_cost = lpSum(
-            ACTIVATION_SCALE * self.sup_info.loc[s, "fixed_cost_vnd"] * y[s, p]
+            self.sup_info.loc[s, "fixed_cost_vnd"] * y[s, p]
             for (s, p) in y
             if "fixed_cost_vnd" in self.sup_info.columns
         )
 
-        model += proc_cost + activation_cost + spoil_cost + pen_cost + theta, "MasterObj"
+        # [FIX-1] Multi-cut objective: Σ_k p_k * theta_k
+        recourse_approx = lpSum(
+            self.scenarios[k].probability * theta_k[k]
+            for k in range(K)
+        )
+        model += proc_cost + activation_cost + spoil_cost + pen_cost + recourse_approx, "MasterObj"
 
         # Demand coverage per scenario (with slack)
         for k, sc in enumerate(self.scenarios):
@@ -275,21 +305,28 @@ class MasterProblem:
         self.model   = model
         self.x       = x
         self.y       = y
-        self.theta   = theta
+        self.theta   = theta_k   # dict {k: LpVar} — multi-cut vars
+        self.K       = K
         self.p_unmet = p_unmet
 
-    def add_optimality_cut(self, x_bar, Q_bar, duals):
+    def add_optimality_cut(self, k_idx, x_bar, Q_k_lp, duals_k):
         """
-        [FIX-B1] Benders optimality cut using LP relaxation duals:
-            θ ≥ Q_bar + Σ_{s,p} dual[s,p] * (x[s,p] − x_bar[s,p])
+        [FIX-1] Multi-cut Benders optimality cut for scenario k:
+            theta_k ≥ Q_k_lp + Σ_{s,p} pi_k[s,p] * (x[s,p] − x_bar[s,p])
 
-        Q_bar = Σ_k p_k * Q_k^LP(x_bar)  (LP relaxation routing cost, lower bound)
-        dual[s,p] = Σ_k p_k * π_k[s,p]  (aggregated shadow prices)
+        One cut per scenario per iteration → K cuts total (vs 1 aggregated before).
+        Tighter because no information loss from probability-weighted averaging.
+
+        Args:
+            k_idx   : scenario index 0..K-1
+            x_bar   : current master solution {(s,p): float}
+            Q_k_lp  : LP subproblem objective value for scenario k
+            duals_k : shadow prices {(s,p): float} for scenario k
         """
-        rhs = Q_bar - sum(duals.get((s, p), 0.0) * x_bar.get((s, p), 0.0)
-                          for (s, p) in self.x)
-        lhs = lpSum(duals.get((s, p), 0.0) * self.x[s, p] for (s, p) in self.x)
-        self.model += (self.theta >= lhs + rhs, f"OptCut_{self.cut_idx}")
+        rhs = Q_k_lp - sum(duals_k.get((s, p), 0.0) * x_bar.get((s, p), 0.0)
+                           for (s, p) in self.x)
+        lhs = lpSum(duals_k.get((s, p), 0.0) * self.x[s, p] for (s, p) in self.x)
+        self.model += (self.theta[k_idx] >= lhs + rhs, f"OptCut_{k_idx}_{self.cut_idx}")
         self.cut_idx += 1
 
     def add_feasibility_cut(self, x_bar, feas_duals):
@@ -520,12 +557,12 @@ def solve_subproblem_lp(k, sc, x_sol, suppliers, stores, dcs, products,
     status = LpStatus[model.status]
 
     if status == "Infeasible":
-        # Build feasibility cut via Phase 1 (minimize sum of infeasibility slacks)
-        # Approximation: use coefficient = 1 for all pickup balance constraints
-        # (proper Phase-1 duals require a separate LP minimizing artificial vars)
+        # [P1 FIX] Demand-weighted feasibility cut coefficients.
+        # Products with higher current procurement target need a larger supply
+        # increase to restore feasibility → use x_sol quantity as weight.
         feas_duals = {}
         for (s, p) in pickup_bal_constrs:
-            feas_duals[(s, p)] = 1.0  # unit direction toward feasibility
+            feas_duals[(s, p)] = max(x_sol.get((s, p), 0), 1.0)
         return 0.0, feas_duals, "feasibility"
 
     if status not in ("Optimal", "Feasible"):
@@ -594,8 +631,8 @@ def solve_subproblem_mip(k, sc, x_sol, suppliers, stores, dcs, products,
 # ══════════════════════════════════════════════════════════════════════════════
 #  BENDERS MAIN LOOP
 # ══════════════════════════════════════════════════════════════════════════════
-def run_benders(suppliers, stores, dcs, products, sp_matrix, daily_demand,
-                distance, fleet_opt, scenarios):
+def run_benders(suppliers, stores, dcs, products, sp_matrix, sp_cost_lookup,
+                daily_demand, distance, fleet_opt, scenarios):
     print("\n" + "=" * 80)
     print("BENDERS DECOMPOSITION v2 (Integer L-shaped) — Stochastic PDP")
     print("=" * 80)
@@ -630,10 +667,12 @@ def run_benders(suppliers, stores, dcs, products, sp_matrix, daily_demand,
         LB_hist.append(LB)
 
         # ── Step 2a: LP relaxation for Benders cuts ───────────────────────────
+        # [FIX-1] Multi-cut: collect per-scenario (Q_lp, duals) separately.
+        # Add K individual cuts instead of 1 aggregated cut.
         Q_total_lp   = 0.0
-        agg_duals    = {}
         cut_type_str = "opt"
         has_feas_cut = False
+        per_scenario_lp = []   # list of (k, Q_lp_k, duals_k, cut_type_k)
 
         print(f"    ⚙ LP subproblems: ", end="", flush=True)
         for k, sc in enumerate(scenarios):
@@ -641,25 +680,29 @@ def run_benders(suppliers, stores, dcs, products, sp_matrix, daily_demand,
             Q_lp, duals, cut_type = solve_subproblem_lp(
                 k, sc, x_sol, suppliers, stores, dcs, products, distance, fleet_opt
             )
+            per_scenario_lp.append((k, Q_lp, duals, cut_type))
             if cut_type == "optimality":
                 Q_total_lp += sc.probability * Q_lp
-                for (s, p), pi in duals.items():
-                    agg_duals[(s, p)] = agg_duals.get((s, p), 0.0) + sc.probability * pi
             elif cut_type == "feasibility":
-                # Add feasibility cut and skip this iteration's UB update
                 master.add_feasibility_cut(x_sol, duals)
                 has_feas_cut = True
                 cut_type_str = "feas"
-            # "novehicles" and "skip" contribute 0 to Q_total_lp
         print(" done.")
 
-        # Add optimality cut if we have valid LP duals
+        # [FIX-1] Add K per-scenario optimality cuts (multi-cut).
+        # Each cut bounds theta_k individually → tighter master LP relaxation.
         if not has_feas_cut:
-            master.add_optimality_cut(x_sol, Q_total_lp, agg_duals)
+            for (k, Q_lp_k, duals_k, cut_type_k) in per_scenario_lp:
+                if cut_type_k == "optimality" and Q_lp_k > 0:
+                    master.add_optimality_cut(k, x_sol, Q_lp_k, duals_k)
 
         # ── Step 2b: MIP subproblems for actual UB ────────────────────────────
+        # [P3 FIX] UB uses negotiated sp_cost (consistent with Master objective)
+        _prod_info_fallback = products.set_index("id")
         proc_cost = sum(
-            products.set_index("id").loc[p, "unit_cost_vnd"] * v
+            sp_cost_lookup.get((s, p),
+                _prod_info_fallback.loc[p, "unit_cost_vnd"] if p in _prod_info_fallback.index else 0
+            ) * v
             for (s, p), v in x_sol.items() if v > 0.01
         )
         Q_total_mip = 0.0
@@ -735,11 +778,14 @@ def print_routes(sub_results, dcs, suppliers, stores, fleet_opt):
             print(f"    {vname}: {route_str}")
 
 
-def print_cost_breakdown(best_UB, sub_results, scenarios, products, best_x):
+def print_cost_breakdown(best_UB, sub_results, scenarios, products, best_x,
+                         sp_cost_lookup=None):
     """Print realistic cost breakdown for academic reporting."""
     prod_info = products.set_index("id")
+    # [P3 FIX] Use negotiated supplier prices for display (consistent with UB)
     proc_cost = sum(
-        prod_info.loc[p, "unit_cost_vnd"] * v
+        (sp_cost_lookup.get((s, p), prod_info.loc[p, "unit_cost_vnd"])
+         if sp_cost_lookup else prod_info.loc[p, "unit_cost_vnd"]) * v
         for (s, p), v in best_x.items() if v > 0.01
     )
     routing_cost = sum(sc.probability * Q_k
@@ -766,6 +812,16 @@ def main():
     print(get_fleet_summary())
 
     suppliers, stores, dcs, products, sp_matrix, daily_demand, distance = load_data()
+
+    # [P3 FIX] Build unified sp_cost_lookup from supplier_product_matrix.
+    # This is the SAME cost source used by ExtensiveFormOptimizer, ensuring
+    # Benders Stage-1 cost is on the same scale as the validation metrics.
+    sp_cost_lookup = {
+        (row["supplier_id"], row["product_id"]): row["unit_cost_vnd"]
+        for _, row in sp_matrix.iterrows()
+    }
+    print(f"  sp_cost_lookup: {len(sp_cost_lookup)} (supplier, product) cost pairs loaded.")
+
     fleet_compact = expand_fleet(VEHICLE_TYPES)
     fleet_opt_raw = to_optimizer_fleet(fleet_compact)
     fleet_opt     = apply_realistic_costs(fleet_opt_raw)   # [FIX-C1]
@@ -798,8 +854,8 @@ def main():
 
     # Run Benders
     best_x, best_UB, LB_hist, UB_hist, sub_results, total_time = run_benders(
-        suppliers, stores, dcs, products, sp_matrix, daily_demand,
-        distance, fleet_opt, scenarios,
+        suppliers, stores, dcs, products, sp_matrix, sp_cost_lookup,
+        daily_demand, distance, fleet_opt, scenarios,
     )
 
     if best_x is None:
@@ -815,7 +871,7 @@ def main():
     print(f"  Benders iterations:          {len(LB_hist):>18}")
     print(f"  Cuts generated:              {len(LB_hist):>18}")
 
-    print_cost_breakdown(best_UB, sub_results, scenarios, products, best_x)
+    print_cost_breakdown(best_UB, sub_results, scenarios, products, best_x, sp_cost_lookup)
 
     # Procurement plan
     prod_info = products.set_index("id")
@@ -858,7 +914,11 @@ def main():
     prod_info = products.set_index("id")
     for (s, p), qty in best_x.items():
         if qty > 0.01:
-            unit_cost = prod_info.loc[p, "unit_cost_vnd"] if p in prod_info.index else 0
+            # [P3 FIX] Negotiated supplier price; fallback to list price if missing
+            unit_cost = sp_cost_lookup.get(
+                (s, p),
+                prod_info.loc[p, "unit_cost_vnd"] if p in prod_info.index else 0
+            )
             pname = prod_info.loc[p, "name"] if p in prod_info.index else p
             proc_rows.append({
                 "supplier_id": s,

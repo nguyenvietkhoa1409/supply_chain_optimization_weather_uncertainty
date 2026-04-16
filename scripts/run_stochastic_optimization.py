@@ -113,15 +113,9 @@ def main():
     print(f"  Refrigerated products: {products['requires_refrigeration'].sum()}/{len(products)}")
 
     # ── STEP 2: Weather scenarios ──────────────────────────────────────────
-    season = input("\nSeason (1=Dry, 2=Monsoon): ").strip()
-    if season == "1":
-        scenarios   = ManualWeatherScenarios.create_dry_season_scenarios()
-        season_name = "Dry Season"
-    else:
-        # scenarios   = ManualWeatherScenarios.create_monsoon_season_scenarios()
-        # season_name = "Monsoon Season"
-        scenarios = get_data_driven_scenarios(season="monsoon", target_count=5)
-        season_name = "Monsoon Season"
+    # [SCALED] Fixed to monsoon, K=4 scenarios (was interactive: target_count=5)
+    scenarios   = get_data_driven_scenarios(season="monsoon", target_count=4)
+    season_name = "Monsoon Season"
 
     total_p = sum(s.probability for s in scenarios)
     if abs(total_p - 1.0) > 0.01:

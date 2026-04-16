@@ -275,12 +275,16 @@ class ExtensiveFormOptimizer:
                 for i in pdp_nodes:
                     for j in pdp_nodes:
                         if i != j:
-                            # [PERFORMANCE FIX] Prune illogical arcs to drastically reduce binary variables
+                            # [PERFORMANCE FIX] Prune illogical arcs to reduce binary variables
                             if i in self.stores and j in self.suppliers:
-                                continue # Precedence strictly forbids Store -> Supplier
-                            if i == depot and j in self.stores:
-                                continue # Must visit suppliers before stores! Depot -> Store is illogical here
-                            
+                                continue  # Precedence strictly forbids Store → Supplier
+
+                            # NOTE: DC → Store arcs are KEPT (not pruned).
+                            # Removing DC→Store caused structural infeasibility:
+                            # when x[s,p]=0 (demand covered by unmet penalty), vehicles
+                            # had no path to stores yet VVisit_store ≥ 1 was hard.
+                            # DC→Store arcs add only K×V×R ≈ 80 extra binaries (negligible).
+
                             arc[k, i, j, v] = LpVariable(
                                 f"arc_{k}_{i}_{j}_{v}", cat="Binary")
 
@@ -495,20 +499,26 @@ class ExtensiveFormOptimizer:
                             )
 
             # ── [PDP-2] Flow Balance: Pickup ties to Stage-1 procurement ──
+            # [FIX-INFEAS] Changed == to <= : Stage-1 x[s,p] is a procurement
+            # COMMITMENT; Stage-2 qty_pickup is PHYSICAL pickup ≤ commitment.
+            # In severe weather (L4), vehicles may not be able to pick up the
+            # full committed quantity → undelivered goods become spoilage cost.
+            # This decoupling ensures the model is always feasible:
+            #   L1/L2: vehicles pick up everything (qty_pickup ≈ x[s,p])
+            #   L4:    vehicles pick up what capacity allows (qty_pickup < x)
+            #   L5:    no vehicles → no pickup (p5 handled by e[k,p]+u[k,p])
             for s in self.suppliers:
                 for p in self.products:
                     if self.sp_available.get((s, p), False):
-                        # Σ_v qty_pickup[k,s,p,v] = x[s,p]
                         pickup_vars = [qty_pickup[k, s, p, v] for v in ops
                                        if (k, s, p, v) in qty_pickup]
                         if pickup_vars:
                             model += (
-                                lpSum(pickup_vars) == x[s, p],
+                                lpSum(pickup_vars) <= x[s, p],   # ≤ not ==
                                 f"PDPPickupBal_{k}_{s}_{p}"
                             )
-                        else:
-                            # No compatible vehicle → force x[s,p]=0
-                            model += (x[s, p] == 0, f"PDPPickupNoCap_{k}_{s}_{p}")
+                        # If no compatible vehicle: pickup = 0 naturally (no vars)
+                        # x[s,p] can still be > 0 (committed, wasted → spoilage)
 
             # Pickup only possible if vehicle visits supplier
             for v in ops:
