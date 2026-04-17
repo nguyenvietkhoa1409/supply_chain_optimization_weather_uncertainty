@@ -1,0 +1,229 @@
+{
+  "Normal Monsoon Day": {
+    "inventory": {
+      "PROD_001": 0,
+      "PROD_002": 0,
+      "PROD_003": 0,
+      "PROD_004": 0,
+      "PROD_005": 0,
+      "PROD_006": 0,
+      "PROD_007": 0,
+      "PROD_008": 0,
+      "PROD_009": 0,
+      "PROD_010": 0
+    },
+    "procurement_routes": [],
+    "distribution_routes": [
+      {
+        "vehicle_id": "mini_van_1",
+        "vehicle_type": "mini_van",
+        "route": [
+          "DC_001",
+          "STORE_006",
+          "STORE_005",
+          "STORE_001",
+          "STORE_002",
+          "STORE_003",
+          "STORE_004",
+          "DC_001"
+        ],
+        "deliveries": {
+          "STORE_006": {
+            "PROD_001": 3.0,
+            "PROD_005": 0.8,
+            "PROD_006": 7.0,
+            "PROD_007": 10.0
+          },
+          "STORE_005": {
+            "PROD_006": 27.0,
+            "PROD_008": 4.2
+          },
+          "STORE_001": {
+            "PROD_002": 17.0,
+            "PROD_003": 18.8,
+            "PROD_004": 2.4,
+            "PROD_009": 32.2
+          },
+          "STORE_002": {
+            "PROD_001": 17.0,
+            "PROD_002": 3.2,
+            "PROD_003": 10.0,
+            "PROD_004": 15.0,
+            "PROD_005": 25.0,
+            "PROD_006": 13.6,
+            "PROD_007": 8.8,
+            "PROD_010": 15.2
+          },
+          "STORE_003": {
+            "PROD_002": 13.0,
+            "PROD_004": 17.0,
+            "PROD_007": 16.0,
+            "PROD_008": 25.0,
+            "PROD_010": 14.0
+          },
+          "STORE_004": {
+            "PROD_001": 11.6,
+            "PROD_005": 35.0,
+            "PROD_009": 17.0
+          }
+        }
+      }
+    ]
+  },
+  "Moderate Rain": {
+    "inventory": {
+      "PROD_001": 0,
+      "PROD_002": 0,
+      "PROD_003": 0,
+      "PROD_004": 0,
+      "PROD_005": 0,
+      "PROD_006": 0,
+      "PROD_007": 0,
+      "PROD_008": 0,
+      "PROD_009": 0,
+      "PROD_010": 0
+    },
+    "procurement_routes": [],
+    "distribution_routes": [
+      {
+        "vehicle_id": "mini_van_1",
+        "vehicle_type": "mini_van",
+        "route": [
+          "DC_001",
+          "STORE_006",
+          "STORE_005",
+          "STORE_001",
+          "STORE_002",
+          "STORE_003",
+          "STORE_004",
+          "DC_001"
+        ],
+        "deliveries": {
+          "STORE_006": {
+            "PROD_002": 8.0,
+            "PROD_003": 8.8,
+            "PROD_007": 10.0,
+            "PROD_009": 13.0,
+            "PROD_010": 3.2
+          },
+          "STORE_005": {
+            "PROD_004": 17.4,
+            "PROD_005": 30.0,
+            "PROD_006": 27.0
+          },
+          "STORE_001": {
+            "PROD_003": 20.0,
+            "PROD_007": 21.0,
+            "PROD_010": 17.0
+          },
+          "STORE_002": {
+            "PROD_001": 17.0,
+            "PROD_007": 3.8,
+            "PROD_009": 19.2
+          },
+          "STORE_003": {
+            "PROD_001": 11.0,
+            "PROD_002": 13.0,
+            "PROD_004": 17.0,
+            "PROD_006": 20.6,
+            "PROD_008": 21.2
+          },
+          "STORE_004": {
+            "PROD_001": 3.6,
+            "PROD_002": 12.2,
+            "PROD_005": 30.8,
+            "PROD_008": 8.0,
+            "PROD_009": 17.0,
+            "PROD_010": 9.0
+          }
+        }
+      }
+    ]
+  },
+  "Heavy Rain (data-driven)": {
+    "inventory": {
+      "PROD_001": 0,
+      "PROD_002": 0,
+      "PROD_003": 0,
+      "PROD_004": 0,
+      "PROD_005": 0,
+      "PROD_006": 0,
+      "PROD_007": 0,
+      "PROD_008": 0,
+      "PROD_009": 0,
+      "PROD_010": 0
+    },
+    "procurement_routes": [],
+    "distribution_routes": [
+      {
+        "vehicle_id": "light_truck_0",
+        "vehicle_type": "light_truck",
+        "route": [
+          "DC_002",
+          "STORE_005",
+          "STORE_004",
+          "STORE_003",
+          "STORE_002",
+          "STORE_001",
+          "STORE_006",
+          "DC_002"
+        ],
+        "deliveries": {
+          "STORE_005": {
+            "PROD_001": 21.0,
+            "PROD_002": 17.0,
+            "PROD_007": 16.0,
+            "PROD_008": 8.2,
+            "PROD_009": 20.2,
+            "PROD_010": 7.0
+          },
+          "STORE_004": {
+            "PROD_006": 11.6,
+            "PROD_008": 8.0
+          },
+          "STORE_003": {
+            "PROD_005": 11.8
+          },
+          "STORE_002": {
+            "PROD_003": 8.8,
+            "PROD_004": 12.4,
+            "PROD_005": 25.0,
+            "PROD_006": 18.0,
+            "PROD_009": 29.0,
+            "PROD_010": 19.0
+          },
+          "STORE_001": {
+            "PROD_001": 10.6,
+            "PROD_002": 16.2,
+            "PROD_003": 20.0,
+            "PROD_004": 10.0,
+            "PROD_006": 18.0,
+            "PROD_007": 18.8,
+            "PROD_008": 13.0
+          },
+          "STORE_006": {
+            "PROD_004": 12.0,
+            "PROD_005": 24.0,
+            "PROD_010": 3.2
+          }
+        }
+      }
+    ]
+  },
+  "Tropical Storm/Typhoon (data-driven)": {
+    "inventory": {
+      "PROD_001": 0,
+      "PROD_002": 0,
+      "PROD_003": 0,
+      "PROD_004": 0,
+      "PROD_005": 0,
+      "PROD_006": 0,
+      "PROD_007": 0,
+      "PROD_008": 0,
+      "PROD_009": 0,
+      "PROD_010": 0
+    },
+    "procurement_routes": [],
+    "distribution_routes": []
+  }
+}
