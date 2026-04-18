@@ -128,8 +128,6 @@ class IntegratedStochasticModel:
             weather_scenarios    = self.scenarios,
             fleet_instances      = self.fleet_instances,
             baseline_ratio       = self.baseline_ratio,
-            unmet_penalty        = unmet_penalty,
-            refrig_penalty_factor= refrig_penalty,
         )
 
         status, solution = optimizer.solve(

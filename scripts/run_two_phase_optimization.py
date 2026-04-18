@@ -101,7 +101,7 @@ def main():
         scenarios   = ManualWeatherScenarios.create_dry_season_scenarios()
         season_name = "Dry Season"
     else:
-        scenarios   = get_data_driven_scenarios(season="monsoon", target_count=5)
+        scenarios   = get_data_driven_scenarios(season="monsoon", target_count=5, merge_duplicates=True)
         season_name = "Monsoon Season"
 
     # Normalize probabilities
@@ -144,7 +144,7 @@ def main():
 
     rp_status, rp_solution = integrated.solve_two_phase_extensive_form(
         time_limit    = 1800,
-        gap_tolerance = 0.08,
+        gap_tolerance = 0.05,
         unmet_penalty = 500_000,
     )
 
@@ -204,7 +204,9 @@ def main():
         print("\n" + "-" * 80)
         print("STEP 5: Computing EEV")
         eev, eev_breakdown = validator.compute_eev(
-            ev_stage1, scenarios, network, products, supplier_product, daily_demand, 120
+            ev_stage1, scenarios, network, products, supplier_product, daily_demand, 120,
+            vehicle_config   = VEHICLE_CONFIG_LEGACY,
+            fleet_instances  = fleet_optimizer,
         )
 
         print("\n" + "-" * 80)

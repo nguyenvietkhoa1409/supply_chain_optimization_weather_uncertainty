@@ -78,7 +78,7 @@ _UNMET_PENALTY_MULT = 10.0
 _WASTE_MULT = 3.5
 
 
-class TwoPhaseExtensiveFormOptimizer:
+class TwoPhaseOptimizerV2:
     """
     Two-Phase Two-Stage Stochastic MILP (no emergency procurement).
 
@@ -441,68 +441,66 @@ class TwoPhaseExtensiveFormOptimizer:
         # ── Stage-1 constraints ───────────────────────────────────────────
 
         # Supplier weight capacity
-        if fixed_stage1 is None:
-            for s in self.suppliers:
-                model += (
-                    lpSum(x[s, p] * self.prod_weight[p]
-                          for p in self.products if self.sp_avail.get((s, p), False))
-                    <= self.sup_cap[s], f"S1Cap_{s}"
-                )
+        for s in self.suppliers:
+            model += (
+                lpSum(x[s, p] * self.prod_weight[p]
+                      for p in self.products if self.sp_avail.get((s, p), False))
+                <= self.sup_cap[s], f"S1Cap_{s}"
+            )
 
-            # MOQ activation
-            for s in self.suppliers:
-                for p in self.products:
-                    if self.sp_avail.get((s, p), False):
-                        moq = self.sp_moq.get((s, p), 0)
-                        model += (x[s, p] >= moq * y[s, p], f"S1MOQlo_{s}_{p}")
-                        model += (x[s, p] <= M1  * y[s, p], f"S1MOQhi_{s}_{p}")
-
-            # Per-product baseline, overstock, concentration
+        # MOQ activation
+        for s in self.suppliers:
             for p in self.products:
-                d = self.total_demand.get(p, 0)
-                if d <= 0:
+                if self.sp_avail.get((s, p), False):
+                    moq = self.sp_moq.get((s, p), 0)
+                    model += (x[s, p] >= moq * y[s, p], f"S1MOQlo_{s}_{p}")
+                    model += (x[s, p] <= M1  * y[s, p], f"S1MOQhi_{s}_{p}")
+
+        # Per-product baseline, overstock, concentration
+        for p in self.products:
+            d = self.total_demand.get(p, 0)
+            if d <= 0:
+                continue
+
+            all_x = lpSum(x[s, p] for s in self.suppliers
+                          if self.sp_avail.get((s, p), False))
+
+            # S1AccBase: baseline anchored to accessible suppliers in sev=1
+            # (prevents solver dumping all orders on inaccessible suppliers)
+            best_sc   = self.scenarios[0]
+            acc_best  = self._acc_sups(best_sc, p)
+            if acc_best:
+                acc_x_best = lpSum(
+                    x[s, p] for s in acc_best
+                    if self.sp_avail.get((s, p), False)
+                )
+                model += (acc_x_best >= self.beta * d, f"S1AccBase_{p}")
+
+            # S1ScenarioBase: per-scenario floor scaled by capacity_reduction_factor
+            # Floor is capped so it never exceeds concentration limits (feasibility).
+            for k_s, sc_s in enumerate(self.scenarios):
+                acc_s = self._acc_sups(sc_s, p)
+                ops_s = ops_by_k.get(k_s, [])
+                if not acc_s or not ops_s:
                     continue
+                n_acc     = len([s for s in acc_s if self.sp_avail.get((s, p), False)])
+                max_acc   = self.conc_max * d * n_acc          # physical ceiling
+                raw_floor = self.beta * d * sc_s.capacity_reduction_factor
+                floor     = min(raw_floor, max_acc * 0.95)     # 5% safety margin
+                if floor > 1e-3:
+                    acc_x_s = lpSum(
+                        x[s, p] for s in acc_s
+                        if self.sp_avail.get((s, p), False)
+                    )
+                    model += (acc_x_s >= floor, f"S1ScenBase_{k_s}_{p}")
 
-                all_x = lpSum(x[s, p] for s in self.suppliers
-                              if self.sp_avail.get((s, p), False))
+            # Overstock prevention
+            model += (all_x <= 1.5 * d, f"S1Over_{p}")
 
-                # S1AccBase: baseline anchored to accessible suppliers in sev=1
-                # (prevents solver dumping all orders on inaccessible suppliers)
-                best_sc   = self.scenarios[0]
-                if best_sc.severity_level <= 2:
-                    acc_best  = self._acc_sups(best_sc, p)
-                    if acc_best:
-                        acc_x_best = lpSum(
-                            x[s, p] for s in acc_best
-                            if self.sp_avail.get((s, p), False)
-                        )
-                        model += (acc_x_best >= self.beta * d, f"S1AccBase_{p}")
-
-                # S1ScenarioBase: per-scenario floor scaled by capacity_reduction_factor
-                # Floor is capped so it never exceeds concentration limits (feasibility).
-                for k_s, sc_s in enumerate(self.scenarios):
-                    acc_s = self._acc_sups(sc_s, p)
-                    ops_s = ops_by_k.get(k_s, [])
-                    if not acc_s or not ops_s:
-                        continue
-                    n_acc     = len([s for s in acc_s if self.sp_avail.get((s, p), False)])
-                    max_acc   = self.conc_max * d * n_acc          # physical ceiling
-                    raw_floor = self.beta * d * sc_s.capacity_reduction_factor
-                    floor     = min(raw_floor, max_acc * 0.95)     # 5% safety margin
-                    if floor > 1e-3:
-                        acc_x_s = lpSum(
-                            x[s, p] for s in acc_s
-                            if self.sp_avail.get((s, p), False)
-                        )
-                        model += (acc_x_s >= floor, f"S1ScenBase_{k_s}_{p}")
-
-                # Overstock prevention
-                model += (all_x <= 1.5 * d, f"S1Over_{p}")
-
-                # Concentration risk
-                for s in self.suppliers:
-                    if self.sp_avail.get((s, p), False):
-                        model += (x[s, p] <= self.conc_max * d, f"S1Conc_{s}_{p}")
+            # Concentration risk
+            for s in self.suppliers:
+                if self.sp_avail.get((s, p), False):
+                    model += (x[s, p] <= self.conc_max * d, f"S1Conc_{s}_{p}")
 
         # ── Phase-2A constraints ──────────────────────────────────────────
         for k, sc in enumerate(self.scenarios):

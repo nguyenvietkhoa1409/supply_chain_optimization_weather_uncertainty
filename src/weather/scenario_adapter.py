@@ -58,6 +58,7 @@ def get_data_driven_scenarios(
     cache_dir:      Optional[str] = "data/weather_cache",
     dist_cache:     Optional[str] = "data/danang_distribution_parameters.json",
     force_extreme:  bool  = True,
+    merge_duplicates: bool = False,
     api_start:      str   = "2014-01-01",
     api_end:        str   = "2023-12-31",
     verbose:        bool  = True,
@@ -97,7 +98,7 @@ def get_data_driven_scenarios(
     scenarios, quality = gen.generate_scenarios(
         season=season, n_samples=n_samples, target_count=target_count,
         seed=seed, force_extreme=force_extreme,
-        merge_duplicates = False
+        merge_duplicates=merge_duplicates
     )
 
     if verbose:

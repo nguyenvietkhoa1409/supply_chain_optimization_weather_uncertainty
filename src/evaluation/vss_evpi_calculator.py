@@ -74,6 +74,8 @@ class StochasticValidator:
         supplier_product_df: pd.DataFrame,
         demand_df: pd.DataFrame,
         time_limit_per_scenario: int = 120,
+        vehicle_config: Optional[Dict] = None,
+        fleet_instances: Optional[List] = None,
     ) -> Tuple[float, pd.DataFrame]:
         """
         Compute EEV = Expected cost of EV solution evaluated across all scenarios.
@@ -105,6 +107,27 @@ class StochasticValidator:
         """
         if self.verbose:
             print("\nComputing EEV (M-1 fix: evaluating EV solution across all scenarios)…")
+
+        if fleet_instances is not None:
+            if self.verbose:
+                print("  Using TwoPhaseExtensiveFormOptimizer to compute EEV…")
+            try:
+                from optimization.two_phase_optimizer import TwoPhaseExtensiveFormOptimizer
+                optimizer = TwoPhaseExtensiveFormOptimizer(
+                    network=network, products_df=products_df,
+                    supplier_product_df=supplier_product_df, demand_df=demand_df,
+                    weather_scenarios=scenarios, fleet_instances=fleet_instances,
+                )
+                status, solution = optimizer.solve(
+                    time_limit=time_limit_per_scenario * len(scenarios),
+                    gap_tolerance=0.05, fixed_stage1=ev_stage1_procurement,
+                )
+                eev = solution.get("objective_value", 0.0)
+                if self.verbose:
+                    print(f"\n  EEV = {eev:,.0f} VND (via full routing solve)")
+                return eev, solution.get("scenario_costs", pd.DataFrame())
+            except ImportError:
+                print("  ⚠ Could not load TwoPhaseExtensiveFormOptimizer, falling back to legacy EEV evaluator.")
 
         product_cost = dict(zip(products_df["id"], products_df["unit_cost_vnd"]))
         product_weight = dict(zip(products_df["id"], products_df["weight_kg_per_unit"]))
@@ -284,16 +307,24 @@ class StochasticValidator:
             sc_single = copy.deepcopy(sc)
             sc_single.probability = 1.0
 
-            optimizer = ExtensiveFormOptimizer(
-                network=network,
-                products_df=products_df,
-                supplier_product_df=supplier_product_df,
-                demand_df=demand_df,
-                weather_scenarios=[sc_single],   # K=1
-                vehicle_config=vehicle_config,
-                fleet_instances=fleet_instances,
-                risk_aversion=0.0,               # risk-neutral cho WS
-            )
+            if fleet_instances is not None:
+                from optimization.two_phase_optimizer import TwoPhaseExtensiveFormOptimizer
+                optimizer = TwoPhaseExtensiveFormOptimizer(
+                    network=network, products_df=products_df,
+                    supplier_product_df=supplier_product_df, demand_df=demand_df,
+                    weather_scenarios=[sc_single], fleet_instances=fleet_instances,
+                )
+            else:
+                optimizer = ExtensiveFormOptimizer(
+                    network=network,
+                    products_df=products_df,
+                    supplier_product_df=supplier_product_df,
+                    demand_df=demand_df,
+                    weather_scenarios=[sc_single],   # K=1
+                    vehicle_config=vehicle_config,
+                    fleet_instances=fleet_instances,
+                    risk_aversion=0.0,               # risk-neutral cho WS
+                )
 
             status, solution = optimizer.solve(
                 time_limit=time_limit_per_scenario,
@@ -487,9 +518,10 @@ class StochasticValidator:
             lines.append("\n5. EEV BREAKDOWN BY SCENARIO")
             lines.append("-" * 80)
             for _, row in eev_breakdown.iterrows():
+                cost_val = row.get("total_cost_k", row.get("total_cost", 0.0))
                 lines.append(
-                    f"  {row['scenario_name']:30s}  p={row['probability']:.2f}  "
-                    f"cost_k={row['total_cost_k']:>14,.0f} VND"
+                    f"  {row.get('scenario_name', 'SC'):30s}  p={row.get('probability', 0):.2f}  "
+                    f"cost_k={cost_val:>14,.0f} VND"
                 )
 
         if ws_breakdown is not None:
