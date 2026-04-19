@@ -28,3 +28,6 @@ Thumbs.db
 # Keep structure but ignore content
 !data/*/.gitkeep
 !results/*/.gitkeep
+
+#unused code
+unused_code/
