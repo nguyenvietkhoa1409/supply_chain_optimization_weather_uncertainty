@@ -128,3 +128,51 @@ def get_scenario_summary_table(
         "Emergency OK": "Yes" if s.emergency_feasible else "NO",
         "Probability":  f"{s.probability:.1%}",
     } for s in scenarios])
+
+def get_historical_frequency_scenarios(
+    season:     str  = "monsoon",
+    cache_dir:  str  = "data/weather_cache",
+    dist_cache: str  = "data/danang_distribution_parameters.json",
+    api_start:  str  = "2018-01-01",
+    api_end:    str  = "2023-12-31",
+    verbose:    bool = True,
+) -> List[DataDrivenWeatherScenario]:
+    """
+    Hybrid approach: probabilities từ ERA5 historical frequencies,
+    operational parameters từ expert-calibrated table.
+    
+    Đây là phương pháp thay thế get_data_driven_scenarios() cho
+    mục đích academic defensibility tối đa.
+    """
+    if verbose:
+        import logging
+        logging.basicConfig(level=logging.INFO, format="%(message)s")
+    
+    from weather.weather_data import DaNangWeatherData
+    from pathlib import Path
+    
+    wd = DaNangWeatherData(cache_dir=cache_dir)
+    
+    # Load data (dùng cache nếu có)
+    if dist_cache and Path(dist_cache).exists():
+        wd.load_distributions(dist_cache)
+        # Vẫn cần raw_df để tính frequencies
+        # raw_df được cache riêng trong cache_dir
+    
+    if wd.raw_df is None:
+        logger.info("Fetching ERA5 data for frequency computation...")
+        wd.fetch_historical_data(api_start, api_end)
+    
+    # Import function mới
+    from weather.scenario_generator import (
+        build_scenarios_from_historical_frequencies,
+        SEVERITY_DEFINITIONS,
+    )
+    
+    scenarios = build_scenarios_from_historical_frequencies(
+        weather_data=wd,
+        season=season,
+        severity_definitions=SEVERITY_DEFINITIONS,
+    )
+    
+    return [DataDrivenWeatherScenario(**s.__dict__) for s in scenarios]

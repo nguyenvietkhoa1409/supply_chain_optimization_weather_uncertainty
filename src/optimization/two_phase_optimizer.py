@@ -497,43 +497,22 @@ class TwoPhaseExtensiveFormOptimizer:
                 all_x = lpSum(x[s, p] for s in self.suppliers
                               if self.sp_avail.get((s, p), False))
 
-                # S1AccBase: baseline anchored to accessible suppliers in sev=1
-                # (prevents solver dumping all orders on inaccessible suppliers)
-                best_sc   = self.scenarios[0]
-                if best_sc.severity_level <= 2:
-                    acc_best  = self._acc_sups(best_sc, p)
-                    if acc_best:
-                        acc_x_best = lpSum(
-                            x[s, p] for s in acc_best
-                            if self.sp_avail.get((s, p), False)
-                        )
-                        model += (acc_x_best >= self.beta * d, f"S1AccBase_{p}")
+                # S1AccBase, S1ScenBase, S1Over, S1Conc — only meaningful when
+                # Stage-1 is a free decision variable (not in EEV fixed mode).
+                if fixed_stage1 is None:
+                    # NOTE: S1AccBase and S1ScenBase (procurement floors) are intentionally
+                    # OMITTED from this version. They created non-comparable feasible sets
+                    # between RP and EEV, violating the ordering property WS ≤ RP ≤ EEV.
+                    # Anti-laziness is now handled by the Arrhenius spoilage penalty,
+                    # tiered unmet demand penalty, and sunk fleet cost.
 
-                # S1ScenarioBase: per-scenario floor scaled by capacity_reduction_factor
-                # Floor is capped so it never exceeds concentration limits (feasibility).
-                for k_s, sc_s in enumerate(self.scenarios):
-                    acc_s = self._acc_sups(sc_s, p)
-                    ops_s = ops_by_k.get(k_s, [])
-                    if not acc_s or not ops_s:
-                        continue
-                    n_acc     = len([s for s in acc_s if self.sp_avail.get((s, p), False)])
-                    max_acc   = self.conc_max * d * n_acc          # physical ceiling
-                    raw_floor = self.beta * d * sc_s.capacity_reduction_factor
-                    floor     = min(raw_floor, max_acc * 0.95)     # 5% safety margin
-                    if floor > 1e-3:
-                        acc_x_s = lpSum(
-                            x[s, p] for s in acc_s
-                            if self.sp_avail.get((s, p), False)
-                        )
-                        model += (acc_x_s >= floor, f"S1ScenBase_{k_s}_{p}")
+                    # Overstock prevention (physical limit — always needed)
+                    model += (all_x <= 1.5 * d, f"S1Over_{p}")
 
-                # Overstock prevention
-                model += (all_x <= 1.5 * d, f"S1Over_{p}")
-
-                # Concentration risk
-                for s in self.suppliers:
-                    if self.sp_avail.get((s, p), False):
-                        model += (x[s, p] <= self.conc_max * d, f"S1Conc_{s}_{p}")
+                    # Concentration risk (physical limit — always needed)
+                    for s in self.suppliers:
+                        if self.sp_avail.get((s, p), False):
+                            model += (x[s, p] <= self.conc_max * d, f"S1Conc_{s}_{p}")
 
         # ── Phase-2A constraints ──────────────────────────────────────────
         for k, sc in enumerate(self.scenarios):

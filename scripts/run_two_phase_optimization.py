@@ -35,7 +35,7 @@ from data_generation.fleet_config import (
     get_effective_capacity, to_optimizer_fleet,
 )
 from weather.manual_scenarios import ManualWeatherScenarios
-from weather.scenario_adapter import get_data_driven_scenarios
+from weather.scenario_adapter import get_data_driven_scenarios, get_historical_frequency_scenarios
 from optimization.integrated_stochastic import IntegratedStochasticModel
 from optimization.deterministic_baseline import DeterministicBaselineModel
 from evaluation.vss_evpi_calculator import StochasticValidator
@@ -97,12 +97,17 @@ def main():
     # ── Weather scenarios ──────────────────────────────────────────────────────
     print("\nSeason (1=Dry, 2=Monsoon [default]): ", end="")
     season_input = input().strip()
-    if season_input == "1":
-        scenarios   = ManualWeatherScenarios.create_dry_season_scenarios()
-        season_name = "Dry Season"
+    season_name = "Dry" if season_input == "1" else "Monsoon"
+    
+    print("\nScenario Method (1=Data-driven LHS/FFS, 2=Historical Freq ERA5 [recommended]): ", end="")
+    method_input = input().strip() or "2"
+    
+    if method_input == "1":
+        scenarios = get_data_driven_scenarios(
+            season=season_name.lower(), target_count=5, merge_duplicates=True
+        )
     else:
-        scenarios   = get_data_driven_scenarios(season="monsoon", target_count=5, merge_duplicates=True)
-        season_name = "Monsoon Season"
+        scenarios = get_historical_frequency_scenarios(season=season_name.lower())
 
     # Normalize probabilities
     total_p = sum(s.probability for s in scenarios)

@@ -371,6 +371,82 @@ class DaNangWeatherData:
         lines.append("="*72)
         return "\n".join(lines)
 
+    def compute_historical_severity_frequencies(
+        self,
+        season: str = "monsoon"
+    ) -> Dict[int, Dict]:
+        """
+        Tính tần suất lịch sử của từng severity level từ ERA5 data.
+        
+        Sử dụng Wilson Score Interval để đánh giá Confidence Interval (95%).
+        """
+        if self.raw_df is None:
+            raise ValueError("No data — call fetch_historical_data() first")
+            
+        import scipy.stats as stats
+        
+        sub = self.raw_df[self.raw_df["season"] == season].copy()
+        n_total = len(sub)
+        
+        if n_total == 0:
+            raise ValueError(f"No data for season '{season}'")
+            
+        def _classify(row):
+            rain = row.get("rainfall_mm", 0)
+            wind = row.get("wind_max_kmh", 0)
+            if rain > 100.0 or wind > 90.0:  return 5
+            if rain >  50.0 or wind > 60.0:  return 4
+            if rain >  20.0 or wind > 40.0:  return 3
+            if rain >   5.0 or wind > 25.0:  return 2
+            return 1
+            
+        sub["severity"] = sub.apply(_classify, axis=1)
+        
+        result = {}
+        z = 1.96  # 95% CI
+        
+        for level in [1, 2, 3, 4, 5]:
+            sub_level = sub[sub["severity"] == level]
+            n_k = len(sub_level)
+            p = n_k / n_total
+            
+            center = (p + z**2 / (2*n_total)) / (1 + z**2 / n_total)
+            margin = (z * (p*(1-p)/n_total + z**2/(4*n_total**2))**0.5) / (1 + z**2/n_total)
+            ci_lo  = max(0.0, center - margin)
+            ci_hi  = min(1.0, center + margin)
+            
+            if n_k > 0:
+                rain_p50  = float(sub_level["rainfall_mm"].median())
+                rain_p75  = float(sub_level["rainfall_mm"].quantile(0.75))
+                temp_mean = float(sub_level["temp_mean_c"].mean())
+                wind_mean = float(sub_level["wind_max_kmh"].mean())
+            else:
+                rain_p50 = rain_p75 = temp_mean = wind_mean = 0.0
+                
+            result[level] = {
+                "prob":      round(p, 4),
+                "ci_lo":     round(ci_lo, 4),
+                "ci_hi":     round(ci_hi, 4),
+                "n_days":    n_k,
+                "n_total":   n_total,
+                "rain_p50":  round(rain_p50, 1),
+                "rain_p75":  round(rain_p75, 1),
+                "temp_mean": round(temp_mean, 1),
+                "wind_mean": round(wind_mean, 1),
+            }
+            
+            logger.info(
+                f"  L{level}: n={n_k:4d}/{n_total}  "
+                f"p={p:.3f} [{ci_lo:.3f}, {ci_hi:.3f}]  "
+                f"rain_p50={rain_p50:.1f}mm  wind={wind_mean:.1f}km/h"
+            )
+            
+        total_p = sum(v["prob"] for v in result.values())
+        logger.info(f"  Σp = {total_p:.6f} (should be exactly 1.0)")
+        
+        return result
+
+
 
 # Patch: robust loader that ignores unknown/missing fields
 def _load_distributions_robust(self, path: str):

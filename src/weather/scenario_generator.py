@@ -765,3 +765,90 @@ class WeatherScenarioGenerator:
             "acc_general":    s.supplier_accessibility.get("general", 1),
             "source_season":  s.source_season,
         } for s in scenarios])
+
+def build_scenarios_from_historical_frequencies(
+    weather_data: "DaNangWeatherData",
+    season: str = "monsoon",
+    severity_definitions: list = None,
+    min_prob_threshold: float = 0.01,
+) -> List[GeneratedWeatherScenario]:
+    """
+    Tạo weather scenarios với probabilities từ tần suất lịch sử ERA5.
+    
+    Đây là hybrid approach: probabilities = historical freq,
+    operational parameters = expert-calibrated table (grounded citations),
+    physical values (rain, temp, wind) = percentile values từ ERA5 data.
+    """
+    if severity_definitions is None:
+        severity_definitions = SEVERITY_DEFINITIONS  # từ scenario_generator.py
+    
+    # Bước 1: Tính historical frequencies
+    logger.info(f"\nComputing historical severity frequencies ({season})...")
+    freq = weather_data.compute_historical_severity_frequencies(season)
+    
+    # Bước 2: Tạo scenarios
+    scenarios = []
+    for level in [1, 2, 3, 4, 5]:
+        freq_data = freq.get(level, {"prob": 0.0, "n_days": 0})
+        p = freq_data["prob"]
+        
+        # Lấy operational parameters từ bảng đã được grounded
+        sp = next((s for s in severity_definitions if s["level"] == level), None)
+        if sp is None:
+            continue
+        
+        # Physical weather values: lấy từ ERA5 data thực tế
+        # Dùng rain_p50 làm representative value cho level đó
+        rain_rep  = freq_data.get("rain_p50", 0.0)
+        temp_rep  = freq_data.get("temp_mean", 25.0)
+        wind_rep  = freq_data.get("wind_mean", 15.0)
+        
+        # Nếu level không xuất hiện trong historical data
+        if freq_data["n_days"] == 0:
+            logger.warning(
+                f"  L{level} has 0 observations in {season} data. "
+                f"Using theoretical physical values from severity definition."
+            )
+            # Dùng midpoint của rain range trong severity definition
+            rain_rep = sp.get("rain_max", 100.0) * 0.6  # 60% của upper bound
+            if np.isinf(rain_rep):
+                rain_rep = 150.0  # Safe fallback for L5 if missing
+        
+        sc = GeneratedWeatherScenario(
+            scenario_id  = level,
+            name         = sp["name"],
+            probability  = p,
+            rainfall_mm  = round(rain_rep, 1),
+            temperature_c= round(temp_rep, 1),
+            wind_kmh     = round(wind_rep, 1),
+            severity_level = level,
+            speed_reduction_factor    = sp["speed_factor"],
+            capacity_reduction_factor = sp["capacity_factor"],
+            spoilage_multiplier       = sp["spoilage_multiplier"],
+            demand_reduction_factor   = sp.get("demand_reduction_factor", 1.0),
+            supplier_accessibility    = sp["supplier_accessibility"].copy(),
+            emergency_feasible        = sp.get("emergency_feasible", True),
+            road_closure_prob         = sp.get("road_closure_prob", 0.0),
+            source_season             = season,
+            generation_method         = "historical_frequency_ERA5",
+        )
+        scenarios.append(sc)
+        
+        logger.info(
+            f"  Created L{level} scenario: p={p:.4f} "
+            f"[{freq_data.get('ci_lo', 0):.3f}, {freq_data.get('ci_hi', 0):.3f}] "
+            f"n={freq_data['n_days']} days"
+        )
+    
+    # Bước 3: Normalize (phòng trường hợp floating point drift)
+    total_p = sum(s.probability for s in scenarios)
+    if total_p > 0 and abs(total_p - 1.0) > 1e-4:
+        logger.warning(f"  Renormalizing: Σp={total_p:.6f} → 1.0")
+        for s in scenarios:
+            s.probability /= total_p
+    
+    logger.info(f"\n✓ {len(scenarios)} scenarios created from historical frequencies")
+    logger.info(f"  Method: historical_frequency_ERA5 ({season})")
+    logger.info(f"  Data source: ERA5 reanalysis, Da Nang, 2014–2023")
+    
+    return scenarios
