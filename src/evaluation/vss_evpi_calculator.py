@@ -293,7 +293,6 @@ class StochasticValidator:
         Uses ExtensiveFormOptimizer with a single scenario (K=1, probability=1.0).
         """
         import copy
-        from optimization.extensive_form_optimizer import ExtensiveFormOptimizer
 
         if self.verbose:
             print("\nComputing WS (M-2 fix: K separate extensive-form solves, procurement + VRP)…")

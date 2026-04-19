@@ -69,6 +69,7 @@ SEVERITY_DEFINITIONS = [
         "level": 1, "name": "Normal Monsoon Day",
         "rain_max": 5.0, "wind_max": 25.0,
         "speed_factor": 1.08, "capacity_factor": 0.95, "spoilage_multiplier": 1.00,
+        "demand_reduction_factor": 1.00,
         "supplier_accessibility": {"seafood":1,"vegetables":1,"meat":1,"general":1},
         "emergency_feasible": True, "road_closure_prob": 0.00,
     },
@@ -76,6 +77,7 @@ SEVERITY_DEFINITIONS = [
         "level": 2, "name": "Light Rain",
         "rain_max": 20.0, "wind_max": 40.0,
         "speed_factor": 1.15, "capacity_factor": 0.90, "spoilage_multiplier": 1.05,
+        "demand_reduction_factor": 0.95,
         "supplier_accessibility": {"seafood":1,"vegetables":1,"meat":1,"general":1},
         "emergency_feasible": True, "road_closure_prob": 0.01,
     },
@@ -83,6 +85,7 @@ SEVERITY_DEFINITIONS = [
         "level": 3, "name": "Moderate Rain",
         "rain_max": 50.0, "wind_max": 60.0,
         "speed_factor": 1.25, "capacity_factor": 0.80, "spoilage_multiplier": 1.15,
+        "demand_reduction_factor": 0.80,
         "supplier_accessibility": {"seafood":1,"vegetables":1,"meat":1,"general":1},
         "emergency_feasible": True, "road_closure_prob": 0.07,
     },
@@ -90,6 +93,7 @@ SEVERITY_DEFINITIONS = [
         "level": 4, "name": "Heavy Rain",
         "rain_max": 100.0, "wind_max": 90.0,
         "speed_factor": 1.55, "capacity_factor": 0.60, "spoilage_multiplier": 1.30,
+        "demand_reduction_factor": 0.55,
         "supplier_accessibility": {"seafood":0,"vegetables":0,"meat":1,"general":1},
         "emergency_feasible": True, "road_closure_prob": 0.40,
     },
@@ -97,6 +101,7 @@ SEVERITY_DEFINITIONS = [
         "level": 5, "name": "Tropical Storm/Typhoon",
         "rain_max": float("inf"), "wind_max": float("inf"),
         "speed_factor": 2.20, "capacity_factor": 0.10, "spoilage_multiplier": 2.00,
+        "demand_reduction_factor": 0.15,
         "supplier_accessibility": {"seafood":0,"vegetables":0,"meat":0,"general":1},
         "emergency_feasible": False, "road_closure_prob": 0.90,
     },
@@ -138,6 +143,7 @@ class GeneratedWeatherScenario:
     speed_reduction_factor:    float
     capacity_reduction_factor: float
     spoilage_multiplier:       float
+    demand_reduction_factor:   float
     supplier_accessibility:    Dict[str, int]
     emergency_feasible:        bool
     road_closure_prob:         float
@@ -314,6 +320,7 @@ class WeatherScenarioGenerator:
                 speed_reduction_factor=sp["speed_factor"],
                 capacity_reduction_factor=sp["capacity_factor"],
                 spoilage_multiplier=sp["spoilage_multiplier"],
+                demand_reduction_factor=sp["demand_reduction_factor"],
                 supplier_accessibility=sp["supplier_accessibility"].copy(),
                 emergency_feasible=sp["emergency_feasible"],
                 road_closure_prob=sp["road_closure_prob"],
@@ -493,6 +500,7 @@ class WeatherScenarioGenerator:
                 speed_reduction_factor=base.speed_reduction_factor,
                 capacity_reduction_factor=base.capacity_reduction_factor,
                 spoilage_multiplier=base.spoilage_multiplier,
+                demand_reduction_factor=base.demand_reduction_factor,
                 supplier_accessibility=base.supplier_accessibility.copy(),
                 emergency_feasible=base.emergency_feasible,
                 road_closure_prob=base.road_closure_prob,
@@ -593,6 +601,7 @@ class WeatherScenarioGenerator:
                 speed_reduction_factor=sp["speed_factor"],
                 capacity_reduction_factor=sp["capacity_factor"],
                 spoilage_multiplier=sp["spoilage_multiplier"],
+                demand_reduction_factor=sp["demand_reduction_factor"],
                 supplier_accessibility=sp["supplier_accessibility"].copy(),
                 emergency_feasible=sp["emergency_feasible"],
                 road_closure_prob=sp["road_closure_prob"],

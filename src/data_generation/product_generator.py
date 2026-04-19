@@ -226,7 +226,7 @@ class ProductCatalogGenerator:
 
                 if can_supply:
                     base_cost     = product["unit_cost_vnd"]
-                    supplier_cost = base_cost * np.random.uniform(0.85, 1.15)
+                    supplier_cost = base_cost * np.random.uniform(0.85, 1.10)
                     moq           = np.random.randint(5, 20)
                     matrix_data.append({
                         "supplier_id":    supplier_id,
@@ -245,7 +245,7 @@ class ProductCatalogGenerator:
             print(f"\n✓ General supplier {general_id} covers ALL products (30-40% premium)")
             for _, product in products_df.iterrows():
                 base_cost     = product["unit_cost_vnd"]
-                supplier_cost = base_cost * np.random.uniform(1.30, 1.40)
+                supplier_cost = base_cost * np.random.uniform(1.15, 1.25)
                 moq           = np.random.randint(10, 30)
                 matrix_data.append({
                     "supplier_id":    general_id,

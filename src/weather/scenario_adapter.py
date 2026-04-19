@@ -121,6 +121,7 @@ def get_scenario_summary_table(
         "Speed Factor": f"{s.speed_reduction_factor:.2f}x",
         "Capacity":     f"{s.capacity_reduction_factor:.0%}",
         "Spoilage":     f"{s.spoilage_multiplier:.2f}x",
+        "Demand":       f"{s.demand_reduction_factor * 100:.0f}%",
         "Accessible Suppliers": ", ".join(
             k for k,v in s.supplier_accessibility.items() if v
         ),

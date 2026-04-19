@@ -1,0 +1,151 @@
+2. Phân tích Tính Thực tiễn và Recommendations
+Nhìn vào tp_scenario_costs.csv và tp_validation_report.txt, có thể phát hiện một số dấu hiệu realness gap rõ ràng.
+Dấu hiệu 1 — Cấu trúc Chi phí Mất cân đối (Cost Structure Imbalance)
+Normal      stage1=108.4M,  vrp=3.3M,    penalty=0          → VRP = 3% total
+Heavy Rain  stage1=108.4M,  vrp=1.3M,    penalty=220.9M
+Typhoon     stage1=108.4M,  vrp=0,        penalty=781.4M
+VRP cost chiếm chưa đến 3% tổng chi phí trong kịch bản bình thường. Điều này có nghĩa là optimizer thực chất không quan tâm đến routing — mọi quyết định đều bị chi phối bởi procurement cost và unmet penalty. Trong thực tế, logistics cost của fresh food (xăng dầu, nhân công lái xe, bảo trì lạnh) thường chiếm 15–25% tổng chi phí vận hành chuỗi cung ứng.
+Nguyên nhân kỹ thuật Distances ở Đà Nẵng chỉ 5–10km, và cost_per_km (3,000–13,000 VND) nhân với 10km = tối đa 130,000 VNDchuyến. Quá nhỏ so với penalty 10× unit_cost.
+Recommendation 1A — Tăng tính thực tế của VRP cost
+python# fleet_config.py — Điều chỉnh cost structure
+VEHICLE_TYPES = [
+    {
+        type_id mini_van,
+        # Bổ sung driver_daily_wage (lương lái xe ngày)
+        # và loading_cost_per_stop (chi phí bốc xếp tại mỗi điểm)
+        fixed_cost_vnd    350_000,   # Tăng từ 150k bao gồm khấu hao + bảo hiểm
+        cost_per_km_vnd   5_500,     # Xăng RON95 tại VN ~24klít, xe 4kmlít → 6kkm
+        loading_cost_per_stop 25_000, # Chi phí bốc xếp thực tế
+        driver_daily_wage 250_000,   # Lương lái xe Đà Nẵng ~5–6trtháng
+    },
+    {
+        type_id ref_truck,
+        fixed_cost_vnd  1_200_000,   # Tăng bao gồm điện lạnh ~200kngày
+        cold_chain_daily_cost 200_000, # Chi phí duy trì nhiệt độ
+        cost_per_km_vnd  11_000,
+    }
+]
+Recommendation 1B — Thêm time-window constraints cho stores
+Fresh food stores ở VN thường nhận hàng 500–800 sáng (trước giờ mở cửa). Thêm time-window sẽ tạo ra routing conflicts thực tế hơn và buộc optimizer phải dùng nhiều xe hơn.
+python# stores.csv — Thêm cột
+STORE_TIME_WINDOWS = {
+    STORE_001 (5.0, 8.0),   # Chợ truyền thống nhận hàng sáng sớm
+    STORE_002 (6.0, 9.0),   # Siêu thị nhận hàng sáng
+    STORE_003 (5.0, 7.5),
+    STORE_004 (7.0, 10.0),  # Cửa hàng tiện lợi linh hoạt hơn
+    STORE_005 (5.5, 8.0),
+    STORE_006 (6.0, 9.0),
+}
+
+Dấu hiệu 2 — Unmet Penalty Calibration phi thực tế
+_UNMET_PENALTY_MULT = 10.0 trong two_phase_optimizer.py tạo ra penalties cực kỳ lớn. Trong thực tế, penalty cho unmet demand trong retail fresh food thường được đo bằng
+
+Lost margin (bỏ lỡ lợi nhuận) ~25–35% unit price
+Customer goodwill loss (có thể quantify qua churn rate) ~15–20% unit price
+Cộng lại ~40–55% unit price, không phải 10× unit cost (tức 10–14× unit price)
+
+Recommendation 2 — Phân tầng Penalty theo loại sản phẩm
+python# Thay vì một _UNMET_PENALTY_MULT cố định
+UNMET_PENALTY_BY_CATEGORY = {
+    seafood 4.5,    # Cao hơn vì khó thay thế, margin cao
+    meat    4.0,
+    vegetable 2.5,  # Thấp hơn vì substitutable
+    fruit   2.0,
+}
+
+# Và thêm shortage carryover cost (unmet demand hôm nay → lost customer tomorrow)
+GOODWILL_LOSS_FACTOR = 0.20  # 20% additional cost for long-term relationship damage
+
+Dấu hiệu 3 — Spoilage Model Quá Đơn giản
+Hiện tại spoilage được tính bằng spoilage_multiplier × sp_cost của inaccessible suppliers, nhưng không model được
+
+Spoilage của inventory đang có tại DC (tồn kho qua đêm)
+Differential spoilage rate của non-refrigerated vs refrigerated transport
+Spoilage acceleration trong điều kiện nhiệt độ cao (mưa lớn thường đi kèm nhiệt độ cao ở miền Trung)
+
+Recommendation 3 — Arrhenius-based Spoilage Model
+python# products.csv — Bổ sung các cột
+PRODUCT_SHELF_LIFE_PARAMS = {
+    PROD_001 {  # Fresh Fish
+        shelf_life_base_days 1.5,
+        temp_reference_C 4.0,     # Nhiệt độ tham chiếu (bảo quản lạnh)
+        activation_energy_Ea 0.85, # Hệ số Arrhenius (từ literature)
+        ambient_temp_monsoon_C 30, # Nhiệt độ môi trường mùa mưa Đà Nẵng
+    },
+    PROD_007 {  # Chicken
+        shelf_life_base_days 2.0,
+        temp_reference_C 4.0,
+        activation_energy_Ea 0.78,
+        ambient_temp_monsoon_C 30,
+    },
+    PROD_004 {  # Leafy Greens — ít nhạy cảm hơn
+        shelf_life_base_days 4.0,
+        temp_reference_C 10.0,
+        activation_energy_Ea 0.60,
+        ambient_temp_monsoon_C 30,
+    }
+}
+
+def compute_spoilage_rate(product_id, transport_time_h, is_refrigerated, weather_scenario)
+    
+    Simplified Arrhenius model for spoilage during transport
+    Rate doubles roughly every 10°C (Q10 rule)
+    
+    params = PRODUCT_SHELF_LIFE_PARAMS[product_id]
+    T_eff = params[temp_reference_C] if is_refrigerated else params[ambient_temp_monsoon_C]
+    T_ref = params[temp_reference_C]
+    Q10 = 2.0  # Standard food science value
+    rate_multiplier = Q10  ((T_eff - T_ref)  10.0)
+    base_rate = 1.0  (params[shelf_life_base_days]  24)  # per hour
+    spoilage_fraction = min(1.0, base_rate  rate_multiplier  transport_time_h)
+    return spoilage_fraction
+
+Dấu hiệu 4 — Supplier Cost Data không phân biệt Wet Market vs. Wholesale
+Trong tp_stochastic_procurement.csv, SUP_006 (Da Nang Wholesale Market) cung cấp PROD_001 với giá 4,984,268 VND cho 31.6 units → ~157,731 VNDunit. SUP_003 (Hoa Khanh Meat) cung cấp PROD_001 với giá 3,187,745 VND cho 31.6 units → ~100,878 VNDunit. Chênh lệch ~57% cho cùng một sản phẩm (cá tươi). Trong thực tế Đà Nẵng, chênh lệch giữa chợ đầu mối và cảng cá thường chỉ 15–25%.
+Recommendation 4 — Calibrate Unit Costs từ Dữ liệu Thực tế Đà Nẵng
+python# supplier_product_matrix.py — Cost calibration theo thực tế thị trường
+REALISTIC_PRICE_RANGES_VND = {
+    # Căn cứ theo giá thực tế chợ Đà Nẵng Q42024
+    PROD_001 {  # Cá tươi
+        SUP_001 (85_000, 95_000),   # Cảng Thọ Quang giá ngư dân
+        SUP_005 (80_000, 90_000),   # Cảng Nam Ô cạnh tranh hơn
+        SUP_006 (100_000, 110_000), # Chợ đầu mối +15-20% premium
+    },
+    PROD_007 {  # Gà
+        SUP_003 (65_000, 75_000),   # Lò mổ trực tiếp
+        SUP_006 (78_000, 85_000),   # Qua trung gian +15-20%
+    },
+    PROD_004 {  # Rau xanh
+        SUP_002 (18_000, 22_000),   # Nông trường Hòa Vang giá vườn
+        SUP_004 (16_000, 20_000),   # Farm Liên Chiểu tương đương
+        SUP_006 (22_000, 26_000),   # Chợ đầu mối +20-25%
+    }
+}
+# Premium của general wholesale nên là 15-25%, không phải 30-40% như hiện tại
+
+Dấu hiệu 5 — Demand Pattern Chưa Bám Sát Weather-Demand Correlation
+demand_generator.py tạo demand độc lập với weather scenario. Nhưng thực tế
+
+Ngày có bãomưa lớn demand tại store giảm 30–60% (người dân không ra đường)
+Nhưng demand cho một số SKU tăng (mì gói, đồ hộp) — ngoài scope của fresh food
+Cần model effective demand theo scenario
+
+Recommendation 5 — Weather-Conditioned Demand
+python# Thêm vào weather scenario definition
+WEATHER_DEMAND_FACTORS = {
+    1 1.00,   # Normal demand bình thường
+    2 0.95,   # Light rain giảm nhẹ
+    3 0.80,   # Moderate rain giảm đáng kể
+    4 0.55,   # Heavy rain người dân hạn chế ra đường
+    5 0.15,   # Typhoon gần như không có nhu cầu mua sắm thực phẩm tươi
+}
+
+# Trong WeatherScenario class
+@dataclass
+class WeatherScenario
+    ...
+    demand_reduction_factor float = 1.0  # Thêm attribute này
+    
+# Kịch bản Typhoon với demand_reduction_factor=0.15 sẽ làm giảm
+# cả penalty cost lẫn procurement cost một cách hợp lý hơn
+Với điều chỉnh này, penalty_cost của Typhoon scenario sẽ không còn là 781M VND (tính trên full demand) mà sẽ giảm xuống hợp lý hơn vì effective demand cũng giảm.

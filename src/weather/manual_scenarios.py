@@ -70,6 +70,9 @@ class WeatherScenario:
     # no delivery vehicles operate.
     emergency_feasible: bool = True
 
+    # demand_reduction_factor: scales demand based on weather severity
+    demand_reduction_factor: float = 1.0
+
     def get_supplier_accessible(self, supplier_subtype: str) -> int:
         """Convenience accessor; returns 1 if subtype accessible under this scenario."""
         return self.supplier_accessibility.get(supplier_subtype, 1)
@@ -127,6 +130,7 @@ class ManualWeatherScenarios:
                 probability=0.60,
                 supplier_accessibility=cls._ACCESSIBILITY[1],
                 emergency_feasible=True,
+                demand_reduction_factor=1.00,
             ),
             WeatherScenario(
                 scenario_id=2,
@@ -143,6 +147,7 @@ class ManualWeatherScenarios:
                 probability=0.25,
                 supplier_accessibility=cls._ACCESSIBILITY[2],
                 emergency_feasible=True,
+                demand_reduction_factor=0.95,
             ),
             WeatherScenario(
                 scenario_id=3,
@@ -159,6 +164,7 @@ class ManualWeatherScenarios:
                 probability=0.15,
                 supplier_accessibility=cls._ACCESSIBILITY[2],
                 emergency_feasible=True,
+                demand_reduction_factor=0.95,
             ),
         ]
         return scenarios
@@ -186,6 +192,7 @@ class ManualWeatherScenarios:
                 probability=0.30,
                 supplier_accessibility=cls._ACCESSIBILITY[1],
                 emergency_feasible=True,
+                demand_reduction_factor=1.00,
             ),
             WeatherScenario(
                 scenario_id=12,
@@ -202,6 +209,7 @@ class ManualWeatherScenarios:
                 probability=0.25,
                 supplier_accessibility=cls._ACCESSIBILITY[2],
                 emergency_feasible=True,
+                demand_reduction_factor=0.95,
             ),
             WeatherScenario(
                 scenario_id=13,
@@ -218,6 +226,7 @@ class ManualWeatherScenarios:
                 probability=0.20,
                 supplier_accessibility=cls._ACCESSIBILITY[3],
                 emergency_feasible=True,
+                demand_reduction_factor=0.80,
             ),
             WeatherScenario(
                 scenario_id=14,
@@ -234,6 +243,7 @@ class ManualWeatherScenarios:
                 probability=0.15,
                 supplier_accessibility=cls._ACCESSIBILITY[4],  # seafood/veg inaccessible
                 emergency_feasible=True,   # partial: wholesale market still operates
+                demand_reduction_factor=0.55,
             ),
             WeatherScenario(
                 scenario_id=15,
@@ -250,6 +260,7 @@ class ManualWeatherScenarios:
                 probability=0.10,
                 supplier_accessibility=cls._ACCESSIBILITY[5],  # only general accessible
                 emergency_feasible=False,  # NO emergency procurement possible
+                demand_reduction_factor=0.15,
             ),
         ]
         return scenarios
@@ -298,6 +309,7 @@ class ManualWeatherScenarios:
                     "Speed Factor": f"{s.speed_reduction_factor:.2f}x",
                     "Capacity": f"{s.capacity_reduction_factor * 100:.0f}%",
                     "Spoilage": f"{s.spoilage_multiplier:.2f}x",
+                    "Demand": f"{s.demand_reduction_factor * 100:.0f}%",
                     "Accessible Suppliers": ", ".join(accessible),
                     "Emergency OK": "Yes" if s.emergency_feasible else "NO",
                     "Probability": f"{s.probability * 100:.1f}%",

@@ -44,9 +44,10 @@ VEHICLE_TYPES = [
         "volume_m3":            0.9,                # cubic load capacity
 
         # ── Cost (VND) ────────────────────────────────────────────────
-        "fixed_cost_vnd":       150_000,            # daily dispatch cost
-        "cost_per_km_vnd":      3_000,              # fuel + driver
-        "cost_per_hour_vnd":    25_000,             # driver hourly rate
+        "fixed_cost_vnd":       600_000,            # daily dispatch + driver daily wage
+        "loading_cost_per_stop": 100_000,            # loading cost
+        "cost_per_km_vnd":      5_500,              # fuel (RON95) + driver
+        "cost_per_hour_vnd":    50_000,             # driver hourly rate
 
         # ── Performance ───────────────────────────────────────────────
         "base_speed_kmh":       50,                 # nimble in city traffic
@@ -90,7 +91,8 @@ VEHICLE_TYPES = [
         "payload_kg":           1_500,
         "volume_m3":            5.0,
 
-        "fixed_cost_vnd":       700_000,            # premium for refrigeration
+        "fixed_cost_vnd":       900_000,            # premium + cold chain daily
+        "cold_chain_daily_cost": 200_000,           # cold chain maintenance
         "cost_per_km_vnd":      9_000,
         "cost_per_hour_vnd":    60_000,
 

@@ -13,9 +13,6 @@ from typing import Dict, List, Optional, Tuple
 import pandas as pd
 import numpy as np
 
-from optimization.extensive_form_optimizer import ExtensiveFormOptimizer
-from optimization.stochastic_procurement   import StochasticProcurementModel
-from optimization.weather_vrp              import WeatherAwareVRP
 from evaluation.vss_evpi_calculator        import StochasticValidator
 
 # ── Import new two-phase optimizer ────────────────────────────────────────────
@@ -144,104 +141,14 @@ class IntegratedStochasticModel:
     # ==========================================================================
     # ORIGINAL: Extensive Form (DC→Stores, working baseline)
     # ==========================================================================
-    def solve_extensive_form(
-        self,
-        time_limit:    int   = 1800,
-        gap_tolerance: float = 0.05,
-    ) -> Tuple[str, Dict]:
-        """
-        Original working extensive form (DC → Stores routing only).
-        Supplier delivery to DC is implicit.
-        Keep as baseline for VSS/EVPI comparison.
-        """
-        print("\n" + "=" * 80)
-        print("INTEGRATED MODEL: EXTENSIVE FORM (heterogeneous fleet — original)")
-        print("=" * 80)
-
-        optimizer = ExtensiveFormOptimizer(
-            network              = self.network,
-            products_df          = self.products_df,
-            supplier_product_df  = self.supplier_product_df,
-            demand_df            = self.demand_df,
-            weather_scenarios    = self.scenarios,
-            vehicle_config       = self.vehicle_config,
-            fleet_instances      = self.fleet_instances,
-            risk_aversion        = self.risk_aversion,
-            cvar_alpha           = self.cvar_alpha,
-            baseline_ratio       = self.baseline_ratio,
-        )
-
-        status, solution = optimizer.solve(
-            time_limit=time_limit, gap_tolerance=gap_tolerance
-        )
-
-        if status in ("Optimal", "Feasible"):
-            solution["method"]        = "extensive_form"
-            solution["risk_aversion"] = self.risk_aversion
-            solution["fleet_size"]    = (len(self.fleet_instances)
-                                          if self.fleet_instances else 0)
-
-        return status, solution
+        print("\n⚠  solve_extensive_form() is obsolete and removed.")
+        return "Infeasible", {}
 
     # ==========================================================================
     # LEGACY: Sequential heuristic
     # ==========================================================================
-    def solve_sequential(
-        self,
-        time_limit_procurement: int = 600,
-        time_limit_vrp:         int = 300,
-    ) -> Tuple[str, Dict]:
-        """
-        Sequential heuristic (procurement then VRP separately).
-        Kept for quick testing only.
-        """
-        print("\n⚠  SEQUENTIAL HEURISTIC — use solve_two_phase_extensive_form() for research")
-
-        proc_model = StochasticProcurementModel(
-            network              = self.network,
-            products_df          = self.products_df,
-            supplier_product_df  = self.supplier_product_df,
-            demand_df            = self.demand_df,
-            weather_scenarios    = self.scenarios,
-            risk_aversion        = self.risk_aversion,
-            baseline_ratio       = self.baseline_ratio,
-        )
-        proc_status, proc_sol = proc_model.solve(time_limit=time_limit_procurement)
-        if proc_status not in ("Optimal", "Feasible"):
-            return proc_status, {}
-
-        routing_costs     = []
-        routing_solutions = {}
-        for k, sc in enumerate(self.scenarios):
-            vrp = WeatherAwareVRP(
-                network              = self.network,
-                products_df          = self.products_df,
-                demand_df            = self.demand_df,
-                procurement_solution = proc_sol["stage1_procurement"],
-                weather_scenarios    = self.scenarios,
-                vehicle_config       = self.vehicle_config,
-            )
-            vrp_status, vrp_sol = vrp.solve(scenario_id=k, time_limit=time_limit_vrp)
-            cost = vrp_sol.get("objective_value", 0)
-            routing_costs.append(dict(
-                scenario=sc.name, probability=sc.probability, routing_cost=cost
-            ))
-            routing_solutions[sc.name] = vrp_sol
-
-        routing_df  = pd.DataFrame(routing_costs)
-        exp_routing = (routing_df["routing_cost"] * routing_df["probability"]).sum()
-        total       = proc_sol["objective_value"] + exp_routing
-
-        return "Optimal", dict(
-            method                  = "sequential_heuristic",
-            status                  = "Optimal",
-            objective_value         = total,
-            procurement_cost        = proc_sol["objective_value"],
-            expected_routing_cost   = exp_routing,
-            procurement_solution    = proc_sol,
-            routing_solutions       = routing_solutions,
-            routing_costs_df        = routing_df,
-        )
+        print("\n⚠  solve_sequential() is obsolete and removed.")
+        return "Infeasible", {}
 
     # ==========================================================================
     # Report helper (works for both methods)

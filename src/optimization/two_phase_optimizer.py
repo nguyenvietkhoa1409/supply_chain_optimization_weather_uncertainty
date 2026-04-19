@@ -58,6 +58,8 @@ from pulp import (
     PULP_CBC_CMD,
 )
 
+from data_generation.spoilage_model import compute_spoilage_rate
+
 # ── Module-level constants ─────────────────────────────────────────────────────
 _MIN_CAP_KG  = 10.0      # minimum effective vehicle capacity to be considered operable
 _BIG_M_QTY   = 50_000    # Big-M for gate constraints on quantities
@@ -145,6 +147,20 @@ class TwoPhaseExtensiveFormOptimizer:
             r["id"]: bool(r["requires_refrigeration"])
             for _, r in self.products_df.iterrows()
         }
+
+        # Tiered penalty with goodwill loss factor
+        self.prod_category = {
+            r["id"]: r.get("category", "vegetable")
+            for _, r in self.products_df.iterrows()
+        }
+        penalty_base = {"seafood": 4.5, "meat": 4.0, "vegetable": 2.5, "fruit": 2.0}
+        goodwill_loss = 0.20
+        self.prod_penalty_mult = {}
+        for p in self.products:
+            cat = self.prod_category.get(p, "vegetable")
+            self.prod_penalty_mult[p] = penalty_base.get(cat, 3.0) + goodwill_loss
+            if self.prod_refrig.get(p, False):
+                self.prod_penalty_mult[p] = max(self.prod_penalty_mult[p], 5.0)
 
         sup_df = self.network["suppliers"]
         self.sup_cap     = dict(zip(sup_df["id"], sup_df["capacity_kg_per_day"]))
@@ -354,6 +370,10 @@ class TwoPhaseExtensiveFormOptimizer:
 
         s2_terms   = []
         base_spoil = 0.04
+        
+        # Minimum baseline fleet cost (assumes 4 vehicles are owned and their daily costs are sunk)
+        n_owned = min(4, len(self.fleet))
+        min_fleet_cost = sum(self.fleet[i].get("fixed_cost_vnd", 600_000) for i in range(n_owned))
 
         for k, sc in enumerate(self.scenarios):
             prob       = sc.probability
@@ -365,41 +385,46 @@ class TwoPhaseExtensiveFormOptimizer:
 
             # Phase-2A routing cost
             proc_vrp = lpSum(
-                (self.fleet[v]["cost_per_km"]
-                 + self.fleet[v]["cost_per_hour"] / self._eff_speed(v, sc))
-                * self.dist.get((i, j), 0)
+                ((self.fleet[v]["cost_per_km"]
+                  + self.fleet[v]["cost_per_hour"] / self._eff_speed(v, sc))
+                 * self.dist.get((i, j), 0)
+                 + (self.fleet[v].get("loading_cost_per_stop", 25_000) if j != depot else 0))
                 * arc_proc[k, i, j, v]
                 for v in ops
                 for i in nodes_proc for j in nodes_proc if i != j
                 if (k, i, j, v) in arc_proc
             )
             proc_fix = lpSum(
-                self.fleet[v]["fixed_cost_vnd"] * use_proc[k, v]
+                (0 if v < n_owned else self.fleet[v]["fixed_cost_vnd"]) * use_proc[k, v]
                 for v in ops if (k, v) in use_proc
             )
 
             # Phase-2B routing cost
             dist_vrp = lpSum(
-                (self.fleet[v]["cost_per_km"]
-                 + self.fleet[v]["cost_per_hour"] / self._eff_speed(v, sc))
-                * self.dist.get((i, j), 0)
+                ((self.fleet[v]["cost_per_km"]
+                  + self.fleet[v]["cost_per_hour"] / self._eff_speed(v, sc))
+                 * self.dist.get((i, j), 0)
+                 + (self.fleet[v].get("loading_cost_per_stop", 25_000) if j != depot else 0))
                 * arc_dist[k, i, j, v]
                 for v in ops
                 for i in nodes_dist for j in nodes_dist if i != j
                 if (k, i, j, v) in arc_dist
             )
             dist_fix = lpSum(
-                self.fleet[v]["fixed_cost_vnd"] * use_dist[k, v]
+                (0 if v < n_owned else self.fleet[v]["fixed_cost_vnd"]) * use_dist[k, v]
                 for v in ops if (k, v) in use_dist
             )
 
-            # Soft refrigeration penalty (non-refrig vehicle carrying cold product)
+            # Arrhenius-based refrigeration penalty (non-refrig vehicle carrying cold product)
             refrig_pen = lpSum(
-                base_spoil * sc.spoilage_multiplier
-                * (self.refrig_pen - 1.0)
+                compute_spoilage_rate(
+                    category=self.prod_category.get(p, "vegetable"),
+                    transport_time_h=self.dist.get((depot, r), 0) / max(0.1, self._eff_speed(v, sc)),
+                    is_refrigerated=False,
+                    ambient_temp_c=getattr(sc, "temperature_celsius", 28.0)
+                )
                 * self.prod_cost[p]
-                * (self.dist.get((depot, r), 0) / self._eff_speed(v, sc))
-                * self.store_demand.get((r, p), 0)
+                * (self.store_demand.get((r, p), 0) * getattr(sc, 'demand_reduction_factor', 1.0))
                 * arc_dist[k, depot, r, v]
                 for v in ops
                 for r in self.stores for p in self.products
@@ -408,17 +433,23 @@ class TwoPhaseExtensiveFormOptimizer:
                 if (k, depot, r, v) in arc_dist
             )
 
-            # Spoilage opportunity cost from inaccessible suppliers
+            # Spoilage opportunity cost from inaccessible suppliers (Assumes 24h wait)
             spoil_s1 = lpSum(
-                self.sp_cost.get((s, p), self.prod_cost[p]) * x[s, p]
+                compute_spoilage_rate(
+                    category=self.prod_category.get(p, "vegetable"),
+                    transport_time_h=24.0,
+                    is_refrigerated=False,
+                    ambient_temp_c=getattr(sc, "temperature_celsius", 28.0)
+                )
+                * getattr(sc, "spoilage_multiplier", 1.0)
+                * self.sp_cost.get((s, p), self.prod_cost[p]) * x[s, p]
                 for p in self.products
                 for s in self._inacc_sups(sc, p)
             )
 
             # Unmet demand penalty  (NO emergency term)
-            pm = _UNMET_PENALTY_MULT
             unmet_cost = lpSum(
-                pm * self.prod_cost[p] * unmet[k, r, p]
+                self.prod_penalty_mult[p] * self.prod_cost[p] * unmet[k, r, p]
                 for r in self.stores for p in self.products
                 if (k, r, p) in unmet
             )
@@ -436,7 +467,7 @@ class TwoPhaseExtensiveFormOptimizer:
                        + refrig_pen + spoil_s1 + unmet_cost + waste_cost)
             s2_terms.append(prob * total_k)
 
-        model += s1_proc_cost + s1_fix_cost + lpSum(s2_terms), "Obj"
+        model += s1_proc_cost + s1_fix_cost + min_fleet_cost + lpSum(s2_terms), "Obj"
 
         # ── Stage-1 constraints ───────────────────────────────────────────
 
@@ -618,7 +649,7 @@ class TwoPhaseExtensiveFormOptimizer:
             if not ops:
                 for r in self.stores:
                     for p in self.products:
-                        d_rp = self.store_demand.get((r, p), 0)
+                        d_rp = self.store_demand.get((r, p), 0) * getattr(sc, 'demand_reduction_factor', 1.0)
                         if d_rp > 0 and (k, r, p) in unmet:
                             model += (unmet[k, r, p] == d_rp,
                                       f"AllUnmet_{k}_{r}_{p}")
@@ -670,7 +701,7 @@ class TwoPhaseExtensiveFormOptimizer:
             # Demand satisfaction: delivery + unmet ≥ store demand
             for r in self.stores:
                 for p in self.products:
-                    d_rp = self.store_demand.get((r, p), 0)
+                    d_rp = self.store_demand.get((r, p), 0) * getattr(sc, 'demand_reduction_factor', 1.0)
                     if d_rp <= 0:
                         continue
                     del_vars = [qty_dist[k, r, p, v] for v in ops
@@ -915,44 +946,67 @@ class TwoPhaseExtensiveFormOptimizer:
             acc_sups   = self._acc_sups(sc)
             nodes_proc = [depot] + acc_sups
             nodes_dist = [depot] + self.stores
-            pm         = _UNMET_PENALTY_MULT
 
             proc_vrp = sum(
-                (self.fleet[v]["cost_per_km"]
-                 + self.fleet[v]["cost_per_hour"] / self._eff_speed(v, sc))
-                * self.dist.get((i, j), 0)
+                ((self.fleet[v]["cost_per_km"]
+                  + self.fleet[v]["cost_per_hour"] / self._eff_speed(v, sc))
+                 * self.dist.get((i, j), 0)
+                 + (self.fleet[v].get("loading_cost_per_stop", 25_000) if j != depot else 0))
                 * (value(vd["arc_proc"].get((k, i, j, v))) or 0)
                 for v in ops
                 for i in nodes_proc for j in nodes_proc if i != j
                 if (k, i, j, v) in vd["arc_proc"]
             )
             proc_fix = sum(
-                self.fleet[v]["fixed_cost_vnd"]
+                (0 if v < min(4, len(self.fleet)) else self.fleet[v]["fixed_cost_vnd"])
                 * (1 if (value(vd["use_proc"].get((k, v))) or 0) > 0.5 else 0)
                 for v in ops
             )
             dist_vrp = sum(
-                (self.fleet[v]["cost_per_km"]
-                 + self.fleet[v]["cost_per_hour"] / self._eff_speed(v, sc))
-                * self.dist.get((i, j), 0)
+                ((self.fleet[v]["cost_per_km"]
+                  + self.fleet[v]["cost_per_hour"] / self._eff_speed(v, sc))
+                 * self.dist.get((i, j), 0)
+                 + (self.fleet[v].get("loading_cost_per_stop", 25_000) if j != depot else 0))
                 * (value(vd["arc_dist"].get((k, i, j, v))) or 0)
                 for v in ops
                 for i in nodes_dist for j in nodes_dist if i != j
                 if (k, i, j, v) in vd["arc_dist"]
             )
             dist_fix = sum(
-                self.fleet[v]["fixed_cost_vnd"]
+                (0 if v < min(4, len(self.fleet)) else self.fleet[v]["fixed_cost_vnd"])
                 * (1 if (value(vd["use_dist"].get((k, v))) or 0) > 0.5 else 0)
                 for v in ops
             )
             spoilage = sum(
-                (value(x[s, p]) or 0)
+                compute_spoilage_rate(
+                    category=self.prod_category.get(p, "vegetable"),
+                    transport_time_h=24.0,
+                    is_refrigerated=False,
+                    ambient_temp_c=getattr(sc, "temperature_celsius", 28.0)
+                ) * getattr(sc, "spoilage_multiplier", 1.0)
+                * (value(x[s, p]) or 0)
                 * self.sp_cost.get((s, p), self.prod_cost[p])
                 for p in self.products
                 for s in self._inacc_sups(sc, p)
             )
+            # Thêm refrigeration soft penalty vào mục spoilage cost return report
+            refrig_pen_cost = sum(
+                compute_spoilage_rate(
+                    category=self.prod_category.get(p, "vegetable"),
+                    transport_time_h=self.dist.get((depot, r), 0) / max(0.1, self._eff_speed(v, sc)),
+                    is_refrigerated=False,
+                    ambient_temp_c=getattr(sc, "temperature_celsius", 28.0)
+                ) * self.prod_cost[p]
+                  * (self.store_demand.get((r, p), 0) * getattr(sc, 'demand_reduction_factor', 1.0))
+                  * (value(vd["arc_dist"][(k, depot, r, v)]) or 0)
+                for v in ops
+                for r in self.stores for p in self.products
+                if self.prod_refrig.get(p, False) and not self.fleet[v].get("refrigerated", False)
+                if (k, depot, r, v) in vd["arc_dist"]
+            )
+            spoilage += refrig_pen_cost
             unm_c = sum(
-                pm * (value(vd["unmet"].get((k, r, p))) or 0) * self.prod_cost[p]
+                self.prod_penalty_mult[p] * (value(vd["unmet"].get((k, r, p))) or 0) * self.prod_cost[p]
                 for r in self.stores for p in self.products
                 if (k, r, p) in vd["unmet"]
             )
