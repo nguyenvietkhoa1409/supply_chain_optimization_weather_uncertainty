@@ -6,11 +6,11 @@
       "PROD_003": 72.0,
       "PROD_004": 68.8,
       "PROD_005": 121.6,
-      "PROD_006": 95.2,
+      "PROD_006": 27.0,
       "PROD_007": 87.0,
       "PROD_008": 73.0,
       "PROD_009": 123.0,
-      "PROD_010": 58.4
+      "PROD_010": 25.0
     },
     "procurement_routes": [
       {
@@ -23,26 +23,35 @@
         ],
         "pickups": {
           "SUP_002": {
-            "PROD_001": 31.6,
-            "PROD_003": 14.4,
-            "PROD_004": 34.4,
             "PROD_005": 60.8,
-            "PROD_006": 47.6,
-            "PROD_007": 17.4,
-            "PROD_009": 24.6
+            "PROD_006": 19.0,
+            "PROD_007": 17.4
           }
         }
       },
       {
-        "vehicle_id": "light_truck_0",
-        "vehicle_type": "light_truck",
+        "vehicle_id": "mini_van_1",
+        "vehicle_type": "mini_van",
         "route": [
           "DC_001",
+          "SUP_005",
+          "SUP_001",
           "SUP_003",
           "SUP_004",
+          "SUP_002",
           "DC_001"
         ],
         "pickups": {
+          "SUP_005": {
+            "PROD_002": 33.2,
+            "PROD_003": 28.8,
+            "PROD_008": 14.6,
+            "PROD_010": 12.0
+          },
+          "SUP_001": {
+            "PROD_008": 29.2,
+            "PROD_009": 49.2
+          },
           "SUP_003": {
             "PROD_001": 31.6,
             "PROD_002": 33.2,
@@ -56,44 +65,30 @@
             "PROD_003": 28.8,
             "PROD_004": 34.4,
             "PROD_005": 60.8,
-            "PROD_006": 47.6,
+            "PROD_006": 8.0,
             "PROD_007": 34.8,
-            "PROD_010": 29.2
-          }
-        }
-      },
-      {
-        "vehicle_id": "light_truck_1",
-        "vehicle_type": "light_truck",
-        "route": [
-          "DC_001",
-          "SUP_003",
-          "SUP_005",
-          "SUP_001",
-          "DC_001"
-        ],
-        "pickups": {
-          "SUP_003": {},
-          "SUP_005": {
-            "PROD_002": 33.2,
-            "PROD_003": 28.8,
-            "PROD_008": 14.6,
-            "PROD_010": 29.2
+            "PROD_010": 13.0
           },
-          "SUP_001": {
-            "PROD_008": 29.2,
-            "PROD_009": 49.2
+          "SUP_002": {
+            "PROD_001": 31.6,
+            "PROD_003": 14.4,
+            "PROD_004": 34.4,
+            "PROD_009": 24.6
           }
         }
       }
     ],
     "distribution_routes": [
       {
-        "vehicle_id": "mini_van_0",
+        "vehicle_id": "mini_van_1",
         "vehicle_type": "mini_van",
         "route": [
           "DC_001",
           "STORE_006",
+          "STORE_001",
+          "STORE_002",
+          "STORE_003",
+          "STORE_004",
           "STORE_005",
           "DC_001"
         ],
@@ -108,35 +103,32 @@
             "PROD_008": 4.0,
             "PROD_009": 13.0
           },
-          "STORE_005": {
-            "PROD_001": 21.0,
+          "STORE_001": {
+            "PROD_001": 13.0,
             "PROD_002": 17.0,
-            "PROD_003": 7.0,
-            "PROD_004": 10.8,
-            "PROD_005": 30.0,
-            "PROD_006": 27.0,
-            "PROD_007": 16.0,
-            "PROD_008": 16.0,
-            "PROD_009": 22.0
-          }
-        }
-      },
-      {
-        "vehicle_id": "mini_van_1",
-        "vehicle_type": "mini_van",
-        "route": [
-          "DC_001",
-          "STORE_003",
-          "STORE_004",
-          "DC_001"
-        ],
-        "deliveries": {
+            "PROD_003": 20.0,
+            "PROD_005": 7.6,
+            "PROD_006": 17.32,
+            "PROD_007": 21.0,
+            "PROD_008": 13.0,
+            "PROD_009": 33.0,
+            "PROD_010": 2.0
+          },
+          "STORE_002": {
+            "PROD_001": 17.0,
+            "PROD_002": 14.0,
+            "PROD_003": 10.0,
+            "PROD_004": 15.0,
+            "PROD_005": 25.0,
+            "PROD_007": 11.0,
+            "PROD_008": 7.0,
+            "PROD_009": 29.0
+          },
           "STORE_003": {
             "PROD_001": 11.0,
             "PROD_002": 13.0,
             "PROD_003": 16.0,
             "PROD_004": 17.0,
-            "PROD_006": 27.0,
             "PROD_007": 16.0,
             "PROD_008": 25.0,
             "PROD_009": 9.0,
@@ -148,46 +140,20 @@
             "PROD_003": 10.0,
             "PROD_004": 14.0,
             "PROD_005": 35.0,
-            "PROD_006": 22.0,
             "PROD_007": 13.0,
             "PROD_008": 8.0,
             "PROD_009": 17.0,
             "PROD_010": 9.0
-          }
-        }
-      },
-      {
-        "vehicle_id": "mini_van_2",
-        "vehicle_type": "mini_van",
-        "route": [
-          "DC_001",
-          "STORE_002",
-          "STORE_001",
-          "DC_001"
-        ],
-        "deliveries": {
-          "STORE_002": {
-            "PROD_001": 17.0,
-            "PROD_002": 14.0,
-            "PROD_003": 10.0,
-            "PROD_004": 15.0,
-            "PROD_005": 25.0,
-            "PROD_006": 1.2,
-            "PROD_007": 11.0,
-            "PROD_008": 7.0,
-            "PROD_009": 29.0,
-            "PROD_010": 18.4
           },
-          "STORE_001": {
-            "PROD_001": 13.0,
+          "STORE_005": {
+            "PROD_001": 21.0,
             "PROD_002": 17.0,
-            "PROD_003": 20.0,
-            "PROD_005": 7.6,
-            "PROD_006": 18.0,
-            "PROD_007": 21.0,
-            "PROD_008": 13.0,
-            "PROD_009": 33.0,
-            "PROD_010": 17.0
+            "PROD_003": 7.0,
+            "PROD_004": 10.8,
+            "PROD_005": 30.0,
+            "PROD_007": 16.0,
+            "PROD_008": 16.0,
+            "PROD_009": 22.0
           }
         }
       }
@@ -200,15 +166,15 @@
       "PROD_003": 72.0,
       "PROD_004": 68.8,
       "PROD_005": 121.6,
-      "PROD_006": 95.2,
+      "PROD_006": 27.0,
       "PROD_007": 87.0,
       "PROD_008": 73.0,
       "PROD_009": 123.0,
-      "PROD_010": 58.4
+      "PROD_010": 25.0
     },
     "procurement_routes": [
       {
-        "vehicle_id": "mini_van_2",
+        "vehicle_id": "mini_van_1",
         "vehicle_type": "mini_van",
         "route": [
           "DC_001",
@@ -217,37 +183,41 @@
         ],
         "pickups": {
           "SUP_002": {
-            "PROD_001": 31.6,
-            "PROD_003": 14.4,
-            "PROD_004": 34.4,
             "PROD_005": 60.8,
-            "PROD_006": 47.6,
+            "PROD_006": 19.0,
             "PROD_007": 17.4,
             "PROD_009": 24.6
           }
         }
       },
       {
-        "vehicle_id": "light_truck_0",
-        "vehicle_type": "light_truck",
+        "vehicle_id": "mini_van_2",
+        "vehicle_type": "mini_van",
         "route": [
           "DC_001",
-          "SUP_001",
           "SUP_005",
-          "SUP_003",
           "SUP_004",
+          "SUP_003",
+          "SUP_001",
+          "SUP_002",
           "DC_001"
         ],
         "pickups": {
-          "SUP_001": {
-            "PROD_008": 29.2,
-            "PROD_009": 49.2
-          },
           "SUP_005": {
             "PROD_002": 33.2,
             "PROD_003": 28.8,
             "PROD_008": 14.6,
-            "PROD_010": 29.2
+            "PROD_010": 12.0
+          },
+          "SUP_004": {
+            "PROD_001": 15.8,
+            "PROD_002": 16.6,
+            "PROD_003": 28.8,
+            "PROD_004": 34.4,
+            "PROD_005": 60.8,
+            "PROD_006": 8.0,
+            "PROD_007": 34.8,
+            "PROD_010": 13.0
           },
           "SUP_003": {
             "PROD_001": 31.6,
@@ -256,15 +226,14 @@
             "PROD_008": 29.2,
             "PROD_009": 49.2
           },
-          "SUP_004": {
-            "PROD_001": 15.8,
-            "PROD_002": 16.6,
-            "PROD_003": 28.8,
-            "PROD_004": 34.4,
-            "PROD_005": 60.8,
-            "PROD_006": 47.6,
-            "PROD_007": 34.8,
-            "PROD_010": 29.2
+          "SUP_001": {
+            "PROD_008": 29.2,
+            "PROD_009": 49.2
+          },
+          "SUP_002": {
+            "PROD_001": 31.6,
+            "PROD_003": 14.4,
+            "PROD_004": 34.4
           }
         }
       }
@@ -275,12 +244,44 @@
         "vehicle_type": "mini_van",
         "route": [
           "DC_001",
-          "STORE_006",
           "STORE_003",
+          "STORE_002",
+          "STORE_001",
+          "STORE_006",
+          "STORE_005",
           "STORE_004",
           "DC_001"
         ],
         "deliveries": {
+          "STORE_003": {
+            "PROD_001": 10.45,
+            "PROD_002": 12.35,
+            "PROD_003": 15.2,
+            "PROD_004": 16.15,
+            "PROD_007": 15.2,
+            "PROD_008": 23.75,
+            "PROD_009": 8.55
+          },
+          "STORE_002": {
+            "PROD_001": 16.15,
+            "PROD_002": 13.3,
+            "PROD_003": 9.5,
+            "PROD_004": 1.35,
+            "PROD_005": 23.75,
+            "PROD_007": 10.45,
+            "PROD_008": 6.65,
+            "PROD_009": 27.55
+          },
+          "STORE_001": {
+            "PROD_001": 12.35,
+            "PROD_002": 16.15,
+            "PROD_003": 19.0,
+            "PROD_004": 9.5,
+            "PROD_005": 20.9,
+            "PROD_007": 19.95,
+            "PROD_008": 12.35,
+            "PROD_009": 31.35
+          },
           "STORE_006": {
             "PROD_001": 2.85,
             "PROD_002": 7.6,
@@ -291,16 +292,16 @@
             "PROD_008": 3.8,
             "PROD_009": 12.35
           },
-          "STORE_003": {
-            "PROD_001": 10.45,
-            "PROD_002": 12.35,
-            "PROD_003": 15.2,
-            "PROD_004": 16.15,
-            "PROD_006": 25.65,
+          "STORE_005": {
+            "PROD_001": 19.95,
+            "PROD_002": 16.15,
+            "PROD_003": 6.65,
+            "PROD_004": 17.1,
+            "PROD_005": 20.9,
             "PROD_007": 15.2,
-            "PROD_008": 23.75,
-            "PROD_009": 8.55,
-            "PROD_010": 13.3
+            "PROD_008": 15.2,
+            "PROD_009": 20.9,
+            "PROD_010": 0.54
           },
           "STORE_004": {
             "PROD_001": 13.3,
@@ -308,73 +309,9 @@
             "PROD_003": 9.5,
             "PROD_004": 13.3,
             "PROD_005": 33.25,
-            "PROD_006": 20.9,
             "PROD_007": 12.35,
             "PROD_008": 7.6,
-            "PROD_009": 16.15,
-            "PROD_010": 8.55
-          }
-        }
-      },
-      {
-        "vehicle_id": "mini_van_1",
-        "vehicle_type": "mini_van",
-        "route": [
-          "DC_001",
-          "STORE_003",
-          "STORE_005",
-          "STORE_006",
-          "DC_001"
-        ],
-        "deliveries": {
-          "STORE_003": {},
-          "STORE_005": {
-            "PROD_001": 19.95,
-            "PROD_002": 16.15,
-            "PROD_003": 6.65,
-            "PROD_004": 13.7,
-            "PROD_005": 28.5,
-            "PROD_006": 25.65,
-            "PROD_007": 15.2,
-            "PROD_008": 15.2,
-            "PROD_009": 20.9,
-            "PROD_010": 6.65
-          },
-          "STORE_006": {}
-        }
-      },
-      {
-        "vehicle_id": "light_truck_1",
-        "vehicle_type": "light_truck",
-        "route": [
-          "DC_001",
-          "STORE_001",
-          "STORE_002",
-          "DC_001"
-        ],
-        "deliveries": {
-          "STORE_001": {
-            "PROD_001": 12.35,
-            "PROD_002": 16.15,
-            "PROD_003": 19.0,
-            "PROD_005": 13.3,
-            "PROD_006": 17.1,
-            "PROD_007": 19.95,
-            "PROD_008": 12.35,
-            "PROD_009": 31.35,
-            "PROD_010": 16.15
-          },
-          "STORE_002": {
-            "PROD_001": 16.15,
-            "PROD_002": 13.3,
-            "PROD_003": 9.5,
-            "PROD_004": 14.25,
-            "PROD_005": 23.75,
-            "PROD_006": 5.9,
-            "PROD_007": 10.45,
-            "PROD_008": 6.65,
-            "PROD_009": 27.55,
-            "PROD_010": 13.75
+            "PROD_009": 16.15
           }
         }
       }
@@ -387,11 +324,11 @@
       "PROD_003": 72.0,
       "PROD_004": 68.8,
       "PROD_005": 121.6,
-      "PROD_006": 95.2,
+      "PROD_006": 27.0,
       "PROD_007": 87.0,
       "PROD_008": 73.0,
       "PROD_009": 123.0,
-      "PROD_010": 58.4
+      "PROD_010": 25.0
     },
     "procurement_routes": [
       {
@@ -400,37 +337,15 @@
         "route": [
           "DC_001",
           "SUP_002",
+          "SUP_001",
+          "SUP_003",
+          "SUP_004",
+          "SUP_005",
           "DC_001"
         ],
         "pickups": {
           "SUP_002": {
-            "PROD_001": 31.6,
-            "PROD_003": 14.4,
-            "PROD_004": 34.4,
-            "PROD_005": 60.8,
-            "PROD_006": 47.6,
-            "PROD_007": 17.4,
-            "PROD_009": 24.6
-          }
-        }
-      },
-      {
-        "vehicle_id": "light_truck_1",
-        "vehicle_type": "light_truck",
-        "route": [
-          "DC_001",
-          "SUP_005",
-          "SUP_001",
-          "SUP_003",
-          "SUP_004",
-          "DC_001"
-        ],
-        "pickups": {
-          "SUP_005": {
-            "PROD_002": 33.2,
-            "PROD_003": 28.8,
-            "PROD_008": 14.6,
-            "PROD_010": 29.2
+            "PROD_005": 38.73
           },
           "SUP_001": {
             "PROD_008": 29.2,
@@ -449,37 +364,73 @@
             "PROD_003": 28.8,
             "PROD_004": 34.4,
             "PROD_005": 60.8,
-            "PROD_006": 47.6,
+            "PROD_006": 8.0,
             "PROD_007": 34.8,
-            "PROD_010": 29.2
+            "PROD_010": 13.0
+          },
+          "SUP_005": {
+            "PROD_002": 33.2,
+            "PROD_003": 28.8,
+            "PROD_008": 14.6,
+            "PROD_010": 12.0
+          }
+        }
+      },
+      {
+        "vehicle_id": "mini_van_1",
+        "vehicle_type": "mini_van",
+        "route": [
+          "DC_001",
+          "SUP_002",
+          "DC_001"
+        ],
+        "pickups": {
+          "SUP_002": {
+            "PROD_001": 31.6,
+            "PROD_003": 14.4,
+            "PROD_004": 34.4,
+            "PROD_005": 22.07,
+            "PROD_006": 19.0,
+            "PROD_007": 17.4,
+            "PROD_009": 24.6
           }
         }
       }
     ],
     "distribution_routes": [
       {
-        "vehicle_id": "mini_van_1",
+        "vehicle_id": "mini_van_2",
         "vehicle_type": "mini_van",
         "route": [
           "DC_001",
+          "STORE_005",
           "STORE_004",
           "STORE_003",
-          "STORE_005",
+          "STORE_002",
+          "STORE_001",
           "STORE_006",
           "DC_001"
         ],
         "deliveries": {
+          "STORE_005": {
+            "PROD_001": 16.8,
+            "PROD_002": 13.6,
+            "PROD_003": 5.6,
+            "PROD_004": 14.4,
+            "PROD_005": 24.0,
+            "PROD_007": 12.8,
+            "PROD_008": 12.8,
+            "PROD_009": 17.6
+          },
           "STORE_004": {
             "PROD_001": 11.2,
             "PROD_002": 11.2,
             "PROD_003": 8.0,
             "PROD_004": 11.2,
             "PROD_005": 28.0,
-            "PROD_006": 17.6,
             "PROD_007": 10.4,
             "PROD_008": 6.4,
-            "PROD_009": 13.6,
-            "PROD_010": 7.2
+            "PROD_009": 13.6
           },
           "STORE_003": {
             "PROD_001": 8.8,
@@ -487,59 +438,20 @@
             "PROD_003": 12.8,
             "PROD_004": 13.6,
             "PROD_005": 12.8,
-            "PROD_006": 21.6,
             "PROD_007": 12.8,
             "PROD_008": 20.0,
-            "PROD_009": 7.2,
-            "PROD_010": 11.2
+            "PROD_009": 7.2
           },
-          "STORE_005": {
-            "PROD_001": 16.8,
-            "PROD_002": 13.6,
-            "PROD_003": 5.6,
-            "PROD_004": 14.4,
-            "PROD_005": 24.0,
-            "PROD_006": 21.6,
-            "PROD_007": 12.8,
-            "PROD_008": 12.8,
-            "PROD_009": 17.6,
-            "PROD_010": 5.6
-          },
-          "STORE_006": {
-            "PROD_001": 2.4,
-            "PROD_002": 6.4,
-            "PROD_003": 7.2,
-            "PROD_004": 9.6,
-            "PROD_005": 19.2,
-            "PROD_006": 5.6,
-            "PROD_007": 8.0,
-            "PROD_008": 3.2,
-            "PROD_009": 10.4,
-            "PROD_010": 5.6
-          }
-        }
-      },
-      {
-        "vehicle_id": "light_truck_1",
-        "vehicle_type": "light_truck",
-        "route": [
-          "DC_001",
-          "STORE_002",
-          "STORE_001",
-          "DC_001"
-        ],
-        "deliveries": {
           "STORE_002": {
             "PROD_001": 13.6,
             "PROD_002": 11.2,
             "PROD_003": 8.0,
             "PROD_004": 12.0,
             "PROD_005": 20.0,
-            "PROD_006": 14.4,
             "PROD_007": 8.8,
             "PROD_008": 5.6,
             "PROD_009": 23.2,
-            "PROD_010": 15.2
+            "PROD_010": 12.2
           },
           "STORE_001": {
             "PROD_001": 10.4,
@@ -547,11 +459,19 @@
             "PROD_003": 16.0,
             "PROD_004": 8.0,
             "PROD_005": 17.6,
-            "PROD_006": 14.4,
             "PROD_007": 16.8,
             "PROD_008": 10.4,
-            "PROD_009": 26.4,
-            "PROD_010": 13.6
+            "PROD_009": 26.4
+          },
+          "STORE_006": {
+            "PROD_001": 2.4,
+            "PROD_002": 6.4,
+            "PROD_003": 7.2,
+            "PROD_004": 9.6,
+            "PROD_005": 19.2,
+            "PROD_007": 8.0,
+            "PROD_008": 3.2,
+            "PROD_009": 10.4
           }
         }
       }
@@ -597,65 +517,47 @@
         "route": [
           "DC_002",
           "STORE_006",
-          "DC_002"
-        ],
-        "deliveries": {
-          "STORE_006": {
-            "PROD_002": 4.4
-          }
-        }
-      },
-      {
-        "vehicle_id": "light_truck_1",
-        "vehicle_type": "light_truck",
-        "route": [
-          "DC_002",
           "STORE_004",
+          "STORE_003",
+          "STORE_002",
+          "STORE_001",
           "STORE_005",
           "DC_002"
         ],
         "deliveries": {
+          "STORE_006": {
+            "PROD_002": 4.4,
+            "PROD_007": 5.5
+          },
           "STORE_004": {
-            "PROD_007": 7.15,
+            "PROD_008": 4.4,
             "PROD_009": 9.35
           },
-          "STORE_005": {
-            "PROD_001": 11.55,
-            "PROD_002": 9.35,
-            "PROD_007": 8.8,
-            "PROD_008": 8.3,
-            "PROD_009": 12.1
-          }
-        }
-      },
-      {
-        "vehicle_id": "ref_truck_0",
-        "vehicle_type": "ref_truck",
-        "route": [
-          "DC_002",
-          "STORE_003",
-          "STORE_001",
-          "STORE_002",
-          "DC_002"
-        ],
-        "deliveries": {
           "STORE_003": {
             "PROD_001": 6.05,
             "PROD_002": 7.15,
-            "PROD_007": 7.3,
+            "PROD_007": 8.8,
             "PROD_008": 13.75
+          },
+          "STORE_002": {
+            "PROD_001": 9.35,
+            "PROD_002": 2.95,
+            "PROD_007": 0.15,
+            "PROD_009": 9.6
           },
           "STORE_001": {
             "PROD_001": 4.65,
             "PROD_002": 9.35,
             "PROD_007": 11.55,
-            "PROD_008": 7.15,
-            "PROD_009": 11.8
+            "PROD_008": 2.25,
+            "PROD_009": 18.15
           },
-          "STORE_002": {
-            "PROD_001": 9.35,
-            "PROD_002": 2.95,
-            "PROD_009": 15.95
+          "STORE_005": {
+            "PROD_001": 11.55,
+            "PROD_002": 9.35,
+            "PROD_007": 8.8,
+            "PROD_008": 8.8,
+            "PROD_009": 12.1
           }
         }
       }

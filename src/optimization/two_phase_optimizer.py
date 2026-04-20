@@ -210,6 +210,32 @@ class TwoPhaseExtensiveFormOptimizer:
             self.demand_df.groupby("product_id")["demand_units"].sum().to_dict()
         )
 
+        # Time-window lookups
+        try:
+            from data_generation.fleet_config import FRESH_RETAIL_TIME_WINDOWS
+            tw_config = FRESH_RETAIL_TIME_WINDOWS
+        except ImportError:
+            tw_config = {
+                "supplier": {"general": {"open": 4.0, "close": 10.0}},
+                "store": {"default": {"open": 10.0, "close": 13.0}},
+                "dc": {"receive_by": 9.5, "dispatch_at": 10.0},
+                "weather_delay_h": {1: 0.0, 2: 0.0, 3: 0.5, 4: 1.0, 5: 99.0}
+            }
+        
+        self.sup_tw: Dict[str, Dict] = {}
+        for s in self.suppliers:
+            subtype = self.sup_subtype.get(s, "general")
+            tw = tw_config["supplier"].get(subtype, {"open": 4.0, "close": 10.0})
+            self.sup_tw[s] = tw
+            
+        default_tw = tw_config["store"]["default"]
+        self.sto_tw: Dict[str, Dict] = {
+            r: default_tw for r in self.stores
+        }
+        
+        self.weather_delay = tw_config["weather_delay_h"]
+        self.dc_receive_by = tw_config["dc"]["receive_by"]
+
     # ── Helpers ───────────────────────────────────────────────────────────────
     def _get_depot(self, sc) -> str:
         sev = sc.severity_level
@@ -618,6 +644,35 @@ class TwoPhaseExtensiveFormOptimizer:
                             f"pMTZ_{k}_{i}_{j}_{v}"
                         )
 
+            # ── Phase-2A Time-Window Constraints ──
+            if acc_sups and ops:
+                w_delay = self.weather_delay.get(sc.severity_level, 0.0)
+                TW_BIG_M_A = self.dc_receive_by  # 9.5
+                
+                for s in acc_sups:
+                    tw = self.sup_tw.get(s, {"open": 4.0, "close": 10.0})
+                    adj_open  = tw["open"] + w_delay
+                    adj_close = min(tw["close"] + w_delay * 0.5, TW_BIG_M_A)
+                    
+                    for v in ops:
+                        if (k, s, v) not in T_proc:
+                            continue
+                        
+                        visit_s = lpSum(
+                            arc_proc[k, i, s, v]
+                            for i in nodes_proc
+                            if i != s and (k, i, s, v) in arc_proc
+                        )
+                        
+                        model += (
+                            T_proc[k, s, v] >= adj_open - TW_BIG_M_A * (1 - visit_s),
+                            f"pTWo_{k}_{s}_{v}"
+                        )
+                        model += (
+                            T_proc[k, s, v] <= adj_close + TW_BIG_M_A * (1 - visit_s),
+                            f"pTWc_{k}_{s}_{v}"
+                        )
+
         # ── Phase-2B constraints ──────────────────────────────────────────
         for k, sc in enumerate(self.scenarios):
             depot      = depot_by_k[k]
@@ -719,6 +774,34 @@ class TwoPhaseExtensiveFormOptimizer:
                             T_dist[k, j, v] >= T_dist[k, i, v] + svc_i + t_ij
                             - _BIG_M_TIME * (1 - arc_dist[k, i, j, v]),
                             f"dMTZ_{k}_{i}_{j}_{v}"
+                        )
+
+            # ── Phase-2B Time-Window Constraints ──
+            if ops:
+                store_open  = _T_DIST_DEP  # 10.0
+                store_close = 13.0
+                weather_flex = min(self.weather_delay.get(sc.severity_level, 0.0), 1.0)
+                adj_close = store_close + weather_flex
+                TW_BIG_M_B = adj_close + 1.0  # ~14.0 or 15.0
+                
+                for r in self.stores:
+                    for v in ops:
+                        if (k, r, v) not in T_dist:
+                            continue
+                        
+                        visit_r = lpSum(
+                            arc_dist[k, i, r, v]
+                            for i in nodes_dist
+                            if i != r and (k, i, r, v) in arc_dist
+                        )
+                        
+                        model += (
+                            T_dist[k, r, v] >= store_open - TW_BIG_M_B * (1 - visit_r),
+                            f"dTWo_{k}_{r}_{v}"
+                        )
+                        model += (
+                            T_dist[k, r, v] <= adj_close + TW_BIG_M_B * (1 - visit_r),
+                            f"dTWc_{k}_{r}_{v}"
                         )
 
         print(f"  ✓ Variables:   {model.numVariables()}")

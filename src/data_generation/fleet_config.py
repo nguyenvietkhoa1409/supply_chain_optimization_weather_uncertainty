@@ -26,6 +26,37 @@ Key differences from current single-fleet:
 from dataclasses import dataclass, field
 from typing import Dict, List
 
+# ──────────────────────────────────────────────────────────────────────────────
+# Time-Window Configuration for Fresh Retail
+# ──────────────────────────────────────────────────────────────────────────────
+
+FRESH_RETAIL_TIME_WINDOWS = {
+    # Phase 2A: Procurement tour
+    "supplier": {
+        "seafood":    {"open": 4.0,  "close": 8.5},   # cảng cá
+        "vegetables": {"open": 5.0,  "close": 9.5},   # nông trại
+        "meat":       {"open": 4.5,  "close": 8.5},   # lò mổ
+        "general":    {"open": 5.0,  "close": 10.0},  # chợ đầu mối
+    },
+    # Phase 2B: Distribution tour — uniform cho tất cả fresh retail stores
+    "store": {
+        "default":    {"open": 10.0, "close": 13.0},  # 10:00–13:00 nhận hàng
+    },
+    # DC processing window
+    "dc": {
+        "receive_by":   9.5,   # Phase 2A phải về DC trước 9:30
+        "dispatch_at": 10.0,   # Phase 2B bắt đầu từ 10:00
+    },
+    # Weather adjustments (per severity level)
+    "weather_delay_h": {
+        1: 0.0,  # normal
+        2: 0.0,  # light rain
+        3: 0.5,  # moderate rain → +30min
+        4: 1.0,  # heavy rain → +1h (applicable cho supplier window only)
+        5: 99.0, # typhoon → inaccessible
+    },
+}
+
 
 # ──────────────────────────────────────────────────────────────────────────────
 # Vehicle type definitions
