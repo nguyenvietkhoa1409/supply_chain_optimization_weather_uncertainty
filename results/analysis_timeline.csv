@@ -1,0 +1,55 @@
+scenario,phase,vehicle,from_node,node,arrival_h,departure_h,distance_km,travel_time_h
+Normal Monsoon Day,2A,mini_van_0,DC_001,SUP_002,4.09,4.59,4.25,0.09
+Normal Monsoon Day,2A,mini_van_0,SUP_002,DC_001,4.67,4.67,4.25,0.09
+Normal Monsoon Day,2A,mini_van_1,DC_001,SUP_005,4.19,4.69,9.7,0.19
+Normal Monsoon Day,2A,mini_van_1,SUP_005,SUP_001,4.85,5.35,8.01,0.16
+Normal Monsoon Day,2A,mini_van_1,SUP_001,SUP_003,5.49,5.99,7.03,0.14
+Normal Monsoon Day,2A,mini_van_1,SUP_003,SUP_004,6.03,6.53,1.97,0.04
+Normal Monsoon Day,2A,mini_van_1,SUP_004,SUP_002,6.69,7.19,7.61,0.15
+Normal Monsoon Day,2A,mini_van_1,SUP_002,DC_001,7.27,7.27,4.25,0.09
+Normal Monsoon Day,2B,mini_van_1,DC_001,STORE_006,10.13,10.38,6.36,0.13
+Normal Monsoon Day,2B,mini_van_1,STORE_006,STORE_001,10.53,10.78,7.51,0.15
+Normal Monsoon Day,2B,mini_van_1,STORE_001,STORE_002,10.83,11.08,2.83,0.06
+Normal Monsoon Day,2B,mini_van_1,STORE_002,STORE_003,11.24,11.49,7.77,0.16
+Normal Monsoon Day,2B,mini_van_1,STORE_003,STORE_004,11.63,11.88,6.87,0.14
+Normal Monsoon Day,2B,mini_van_1,STORE_004,STORE_005,11.95,12.2,3.74,0.07
+Normal Monsoon Day,2B,mini_van_1,STORE_005,DC_001,12.3,12.3,5.09,0.1
+Light Rain,2A,mini_van_1,DC_001,SUP_002,4.09,4.59,4.25,0.09
+Light Rain,2A,mini_van_1,SUP_002,DC_001,4.69,4.69,4.25,0.09
+Light Rain,2A,mini_van_2,DC_001,SUP_005,4.21,4.71,9.7,0.21
+Light Rain,2A,mini_van_2,SUP_005,SUP_004,4.83,5.33,5.49,0.12
+Light Rain,2A,mini_van_2,SUP_004,SUP_003,5.38,5.88,1.97,0.04
+Light Rain,2A,mini_van_2,SUP_003,SUP_001,6.03,6.53,7.03,0.15
+Light Rain,2A,mini_van_2,SUP_001,SUP_002,6.83,7.33,13.56,0.3
+Light Rain,2A,mini_van_2,SUP_002,DC_001,7.42,7.42,4.25,0.09
+Light Rain,2B,mini_van_0,DC_001,STORE_003,10.24,10.49,11.07,0.24
+Light Rain,2B,mini_van_0,STORE_003,STORE_002,10.66,10.91,7.77,0.17
+Light Rain,2B,mini_van_0,STORE_002,STORE_001,10.98,11.23,2.83,0.06
+Light Rain,2B,mini_van_0,STORE_001,STORE_006,11.39,11.64,7.51,0.17
+Light Rain,2B,mini_van_0,STORE_006,STORE_005,11.75,12.0,4.69,0.1
+Light Rain,2B,mini_van_0,STORE_005,STORE_004,12.08,12.33,3.74,0.08
+Light Rain,2B,mini_van_0,STORE_004,DC_001,12.42,12.42,4.21,0.09
+Moderate Rain,2A,mini_van_0,DC_001,SUP_002,4.11,4.61,4.25,0.11
+Moderate Rain,2A,mini_van_0,SUP_002,SUP_001,4.96,5.46,13.56,0.35
+Moderate Rain,2A,mini_van_0,SUP_001,SUP_003,5.65,6.15,7.03,0.18
+Moderate Rain,2A,mini_van_0,SUP_003,SUP_004,6.2,6.7,1.97,0.05
+Moderate Rain,2A,mini_van_0,SUP_004,SUP_005,6.84,7.34,5.49,0.14
+Moderate Rain,2A,mini_van_0,SUP_005,DC_001,7.59,7.59,9.7,0.25
+Moderate Rain,2A,mini_van_1,DC_001,SUP_002,4.11,4.61,4.25,0.11
+Moderate Rain,2A,mini_van_1,SUP_002,DC_001,4.72,4.72,4.25,0.11
+Moderate Rain,2B,mini_van_2,DC_001,STORE_005,10.13,10.38,5.09,0.13
+Moderate Rain,2B,mini_van_2,STORE_005,STORE_004,10.48,10.73,3.74,0.1
+Moderate Rain,2B,mini_van_2,STORE_004,STORE_003,10.91,11.16,6.87,0.18
+Moderate Rain,2B,mini_van_2,STORE_003,STORE_002,11.36,11.61,7.77,0.2
+Moderate Rain,2B,mini_van_2,STORE_002,STORE_001,11.68,11.93,2.83,0.07
+Moderate Rain,2B,mini_van_2,STORE_001,STORE_006,12.13,12.38,7.51,0.2
+Moderate Rain,2B,mini_van_2,STORE_006,DC_001,12.54,12.54,6.36,0.17
+Heavy Rain,2A,light_truck_0,DC_002,SUP_003,4.15,4.65,3.44,0.15
+Heavy Rain,2A,light_truck_0,SUP_003,DC_002,4.79,4.79,3.44,0.15
+Heavy Rain,2B,light_truck_0,DC_002,STORE_006,10.07,10.32,1.58,0.07
+Heavy Rain,2B,light_truck_0,STORE_006,STORE_004,10.65,10.9,7.81,0.33
+Heavy Rain,2B,light_truck_0,STORE_004,STORE_003,11.19,11.44,6.87,0.29
+Heavy Rain,2B,light_truck_0,STORE_003,STORE_002,11.77,12.02,7.77,0.33
+Heavy Rain,2B,light_truck_0,STORE_002,STORE_001,12.14,12.39,2.83,0.12
+Heavy Rain,2B,light_truck_0,STORE_001,STORE_005,12.55,12.8,3.66,0.16
+Heavy Rain,2B,light_truck_0,STORE_005,DC_002,13.02,13.02,5.21,0.22

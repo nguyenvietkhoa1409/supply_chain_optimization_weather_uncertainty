@@ -1,0 +1,124 @@
+## Phân tích Gap và Roadmap Visualization
+
+---
+
+### 1. Những gì đang thiếu trong output hiện tại
+
+Nhìn vào 4 files output hiện có, có **6 loại thông tin quan trọng chưa được extract** — đặc biệt sau khi thêm time-window:
+
+**Gap 1 — Time-window utilization:** Không có output nào cho thấy xe đến suppliers lúc mấy giờ, có phải wait không, tour kết thúc lúc nào. Đây là bằng chứng trực tiếp rằng time-window constraints đang binding và có giá trị.
+
+**Gap 2 — Service level (fill rate) per store per scenario:** Chỉ có penalty_cost tổng hợp, không có breakdown nào cho thấy store nào bị thiếu hàng bao nhiêu %. Đây là metric quan trọng nhất với fresh retail operator.
+
+**Gap 3 — Supplier utilization và diversification:** `tp_stochastic_procurement.csv` có quantities nhưng không có % utilization của capacity từng supplier, không có Herfindahl-Hirschman Index (HHI) đo concentration risk.
+
+**Gap 4 — Vehicle utilization per scenario:** Không có load factor (% payload used) của từng xe, không có total km traveled per scenario.
+
+**Gap 5 — Inventory buffer analysis:** Không rõ bao nhiêu % inventory tại DC được dùng thực sự vs. bị waste trong Heavy Rain/Typhoon scenarios.
+
+**Gap 6 — Temporal narrative (timeline):** Không có visualization nào cho thấy chuỗi sự kiện theo thời gian: 04:00 mua hàng → 09:30 về DC → 10:00 giao stores, với time-windows.
+
+---
+
+### 2. Output scripts cần bổ sung
+
+Trước khi visualize, cần generate thêm data từ existing results:
+
+```python
+# scripts/generate_analysis_outputs.py
+import json, pandas as pd, numpy as np
+
+routes = json.load(open("results/tp_scenario_routes.json"))
+costs  = pd.read_csv("results/tp_scenario_costs.csv")
+proc   = pd.read_csv("results/tp_stochastic_procurement.csv")
+
+# --- Output 1: Service level per store per scenario ---
+def compute_service_level(routes, demand_df):
+    rows = []
+    for sc_name, data in routes.items():
+        delivered = {}  # (store, product) → qty
+        for route in data["distribution_routes"]:
+            for store, prods in route["deliveries"].items():
+                for prod, qty in prods.items():
+                    delivered[(store, prod)] = delivered.get((store, prod), 0) + qty
+        for (store, prod), demand in demand_lookup.items():
+            sc = scenarios_dict[sc_name]
+            eff_demand = demand * getattr(sc, "demand_reduction_factor", 1.0)
+            del_qty    = delivered.get((store, prod), 0)
+            fill_rate  = min(1.0, del_qty / eff_demand) if eff_demand > 0 else 1.0
+            rows.append({"scenario": sc_name, "store": store,
+                         "product": prod, "fill_rate": fill_rate,
+                         "delivered": del_qty, "demand": eff_demand})
+    return pd.DataFrame(rows)
+
+# --- Output 2: Estimated arrival times (approximate from distances + speed) ---
+def estimate_arrival_times(routes, dist_matrix, fleet_config, scenarios):
+    timeline_rows = []
+    for sc_name, data in routes.items():
+        sc = scenarios_dict[sc_name]
+        # Phase 2A
+        for route in data["procurement_routes"]:
+            t = 4.0  # departure
+            veh = fleet_lookup[route["vehicle_id"]]
+            speed = veh["base_speed_kmh"] / sc.speed_reduction_factor
+            prev = route["route"][0]
+            for stop in route["route"][1:]:
+                travel = dist_matrix.loc[prev, stop] / speed
+                t += travel
+                if stop != route["route"][0]:  # not DC
+                    timeline_rows.append({
+                        "scenario": sc_name, "phase": "2A",
+                        "vehicle": route["vehicle_id"], "node": stop,
+                        "arrival_h": round(t, 2),
+                        "service_h": 0.5
+                    })
+                    t += 0.5  # service time
+                prev = stop
+        # Phase 2B — similar logic, departure 10:00
+    return pd.DataFrame(timeline_rows)
+
+# --- Output 3: Supplier utilization ---
+sup_df = pd.read_csv("data/synthetic/suppliers.csv")
+for _, row in sup_df.iterrows():
+    sid = row["id"]
+    total_ordered_kg = proc[proc["supplier_id"]==sid]["quantity_units"].sum() * avg_weight
+    utilization = total_ordered_kg / row["capacity_kg_per_day"]
+    # ... save
+
+# --- Output 4: HHI per product ---
+for prod in products:
+    orders = proc[proc["product_id"]==prod]["quantity_units"]
+    total  = orders.sum()
+    shares = orders / total
+    hhi    = (shares**2).sum()
+    # HHI: 0=perfect diversification, 1=monopoly
+```
+
+---
+
+### 3. Framework Visualization cho Paper
+
+Đây là 6 figures được recommend theo narrative flow từ methodology → results:
+
+**Figure 1 (Methodology):** Two-phase decision architecture với time-windows — structural diagram showing 3 tiers và timeline
+
+**Figure 2 (Results — Normal scenario):** Route map với timing annotations — chứng minh time-window feasibility
+
+**Figure 3 (Results — Cross-scenario):** Cost decomposition stacked bar — narrative của weather impact
+
+**Figure 4 (Results — Procurement):** Supplier diversification heatmap — chứng minh concentration constraints hoạt động
+
+**Figure 5 (Results — Service):** Fill rate heatmap (store × scenario) — business impact metrics
+
+**Figure 6 (Results — Decision value):** VSS/EVPI/CVaR dashboard — stochastic value summary
+
+
+**Figure 1 — Two-phase timeline với time-windows** (Gantt chart): Trục x là thời gian 04:00–14:00, trục y là vehicles. Phase 2A bars từ 04:00–09:30, Phase 2B bars từ 10:00–13:00, với supplier open/close windows được shade. Đây là figure duy nhất chứng minh time-window integration hoạt động.
+
+**Figure 2 — Procurement diversification heatmap**: Ma trận 6×10 (suppliers × products), màu sắc là quantity ordered. Chứng minh concentration constraint (không supplier nào chiếm >40% một sản phẩm). Dễ tạo với `seaborn.heatmap`.
+
+**Figure 4 — Supply chain response by scenario** (3-panel figure): Panel trên là inventory tại DC, panel giữa là số xe operable, panel dưới là fill rate. Ba panels stack theo 5 scenarios. Đây là figure thể hiện rõ nhất chi "câu chuyện" của model: khi bão đến, inventory về 0, xe không chạy được, fill rate giảm — và tất cả điều này đã được anticipate trong Stage 1.
+
+**Figure 5 — Fill rate heatmap** (stores × scenarios): Ma trận 6×5, màu từ đỏ (0%) đến xanh (100%). Đây là figure business-impact nhất — stakeholder không cần hiểu MILP, chỉ cần thấy store nào bị affected thế nào trong từng kịch bản.
+
+Lưu ý: Các figure này không nên được đánh số, ví dụ như (Figure 4) trực tiếp trong ảnh, vì khi report ở doc, tôi sẽ tự chủ việc đánh số này sau.
