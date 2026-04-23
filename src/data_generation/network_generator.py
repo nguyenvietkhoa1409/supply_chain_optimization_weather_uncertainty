@@ -42,16 +42,17 @@ class DaNangNetworkGenerator:
         self.center_lat = 16.0544
         self.center_lon = 108.2022
         
-    def generate_suppliers(self, n_suppliers: int = 6) -> pd.DataFrame:
+    def generate_suppliers(self, n_suppliers: int = 9) -> pd.DataFrame:
         """
-        Generate supplier locations
-        
-        UPDATED: Now generates 6 suppliers (5 specialized + 1 general)
+        Generate supplier locations.
+        UPDATED: 9 suppliers (7 specialized + 2 general/wholesale)
+        for improved network coverage and reduced concentration constraint pressure.
         """
         suppliers = []
-        
-        # 5 Specialized suppliers
+
+        # 7 Specialized + 2 General suppliers
         archetypes = [
+            # --- Original 5 specialized ---
             {
                 'name': 'Tho Quang Seafood',
                 'type': 'seafood',
@@ -91,44 +92,74 @@ class DaNangNetworkGenerator:
                 'base_lon': 108.1667,
                 'capacity_range': (1800, 2500),
                 'fixed_cost_range': (280000, 480000)
-            }
+            },
+            # --- NEW: 3 additional suppliers ---
+            {
+                # Second seafood: My Khe beach fishing port (east coast, different zone)
+                'name': 'My Khe Fishing Cooperative',
+                'type': 'seafood',
+                'base_lat': 16.0600,
+                'base_lon': 108.2450,
+                'capacity_range': (1200, 1800),
+                'fixed_cost_range': (200000, 380000)
+            },
+            {
+                # Second meat: Cam Le industrial slaughterhouse district
+                'name': 'Cam Le Livestock',
+                'type': 'meat',
+                'base_lat': 16.0230,
+                'base_lon': 108.1980,
+                'capacity_range': (900, 1500),
+                'fixed_cost_range': (220000, 400000)
+            },
+            {
+                # Second general wholesale: Ngu Hanh Son area (south Da Nang)
+                'name': 'Ngu Hanh Son Wholesale',
+                'type': 'general',
+                'base_lat': 15.9980,
+                'base_lon': 108.2490,
+                'capacity_range': (700, 1100),
+                'fixed_cost_range': (1200000, 1600000)
+            },
         ]
-        
-        # Generate 5 specialized suppliers
-        for i in range(min(5, n_suppliers)):
+
+        # Generate all specialized/general suppliers up to n_suppliers
+        for i in range(min(len(archetypes), n_suppliers)):
             arch = archetypes[i]
-            
+
             lat = arch['base_lat'] + np.random.normal(0, 0.01)
             lon = arch['base_lon'] + np.random.normal(0, 0.01)
-            
-            capacity = np.random.uniform(*arch['capacity_range'])
+
+            capacity   = np.random.uniform(*arch['capacity_range'])
             fixed_cost = np.random.uniform(*arch['fixed_cost_range'])
-            
+
             suppliers.append({
-                'id': f'SUP_{i+1:03d}',
-                'name': f"{arch['name']} {i+1}",
-                'type': 'supplier',
-                'subtype': arch['type'],
-                'latitude': lat,
-                'longitude': lon,
+                'id':                  f'SUP_{i+1:03d}',
+                'name':                f"{arch['name']} {i+1}",
+                'type':                'supplier',
+                'subtype':             arch['type'],
+                'latitude':            lat,
+                'longitude':           lon,
                 'capacity_kg_per_day': round(capacity, 2),
-                'fixed_cost_vnd': round(fixed_cost, 0)
+                'fixed_cost_vnd':      round(fixed_cost, 0)
             })
-        
-        # CRITICAL FIX: Add 6th GENERAL supplier (wholesale market)
-        if n_suppliers >= 6:
+
+        # Legacy: if caller explicitly passes n_suppliers >= 6 but < len(archetypes),
+        # still add the original general wholesale market (SUP_006) for backward compat.
+        if n_suppliers == 6 and len(suppliers) < 6:
             suppliers.append({
                 'id': 'SUP_006',
                 'name': 'Da Nang Wholesale Market',
                 'type': 'supplier',
-                'subtype': 'general',  # Can supply ALL products
+                'subtype': 'general',
                 'latitude': self.center_lat,
                 'longitude': self.center_lon,
-                'capacity_kg_per_day': 900.0,  # Stricter capacity
-                'fixed_cost_vnd': 1500000.0    # Higher overhead
+                'capacity_kg_per_day': 900.0,
+                'fixed_cost_vnd': 1500000.0
             })
-        
+
         return pd.DataFrame(suppliers)
+
     
     def generate_distribution_centers(self, n_dcs: int = 2) -> pd.DataFrame:
         """Generate distribution center locations"""

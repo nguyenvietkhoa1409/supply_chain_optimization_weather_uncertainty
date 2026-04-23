@@ -149,7 +149,7 @@ def main():
 
     rp_status, rp_solution = integrated.solve_two_phase_extensive_form(
         time_limit    = 1800,
-        gap_tolerance = 0.05,
+        gap_tolerance = 0.03,
         unmet_penalty = 500_000,
     )
 

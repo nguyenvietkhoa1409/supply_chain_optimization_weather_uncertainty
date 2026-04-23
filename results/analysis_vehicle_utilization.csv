@@ -1,12 +1,12 @@
 scenario,phase,vehicle_id,vehicle_type,total_km,loaded_kg,capacity_kg,load_factor_pct
-Normal Monsoon Day,2A,mini_van_0,mini_van,8.5,38.18,300,12.73
-Normal Monsoon Day,2A,mini_van_1,mini_van,38.57,266.66,300,88.89
-Normal Monsoon Day,2B,mini_van_1,mini_van,40.17,300.0,300,100.0
-Light Rain,2A,mini_van_1,mini_van,8.5,48.02,300,16.01
-Light Rain,2A,mini_van_2,mini_van,42.0,256.82,300,85.61
-Light Rain,2B,mini_van_0,mini_van,41.82,270.0,300,90.0
-Moderate Rain,2A,mini_van_0,mini_van,42.0,240.0,300,80.0
-Moderate Rain,2A,mini_van_1,mini_van,8.5,64.84,300,21.61
-Moderate Rain,2B,mini_van_2,mini_van,40.17,240.0,300,80.0
-Heavy Rain,2A,light_truck_0,light_truck,6.88,80.92,1000,8.09
-Heavy Rain,2B,light_truck_0,light_truck,35.73,80.92,1000,8.09
+Normal Monsoon Day,2A,mini_van_1,mini_van,12.76,64.2,300,21.4
+Normal Monsoon Day,2A,ref_truck_1,ref_truck,66.36,280.24,1500,18.68
+Normal Monsoon Day,2B,ref_truck_0,ref_truck,58.18,344.44,1500,22.96
+Light Rain,2A,mini_van_0,mini_van,71.1,237.67,300,79.22
+Light Rain,2A,mini_van_1,mini_van,20.18,106.77,300,35.59
+Light Rain,2B,ref_truck_1,ref_truck,58.18,332.89,1500,22.19
+Moderate Rain,2A,mini_van_2,mini_van,12.76,64.2,300,21.4
+Moderate Rain,2A,ref_truck_0,ref_truck,74.73,280.24,1500,18.68
+Moderate Rain,2B,ref_truck_1,ref_truck,63.01,290.74,1500,19.38
+Heavy Rain,2A,light_truck_1,light_truck,45.05,121.25,1000,12.12
+Heavy Rain,2B,ref_truck_1,ref_truck,55.2,119.42,1500,7.96

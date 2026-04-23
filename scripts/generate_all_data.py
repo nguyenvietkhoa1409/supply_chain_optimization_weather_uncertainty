@@ -2,7 +2,7 @@
 """
 Master Data Generation Script
 Generates complete synthetic Da Nang supply chain dataset
-UPDATED: Uses 6 suppliers (5 specialized + 1 general)
+UPDATED: Uses 9 suppliers (7 specialized + 2 general)
 """
 
 import sys
@@ -28,7 +28,7 @@ def main():
     config = {
         'seed': 42,
         'network': {
-            'n_suppliers': 6,      # UPDATED: Was 5, now 6 (includes general)
+            'n_suppliers': 9,      # UPDATED: 9 suppliers (7 specialized + 2 general)
             'n_dcs': 2,
             'n_stores': 6
         },
@@ -44,7 +44,7 @@ def main():
     print(json.dumps(config, indent=2))
     
     print("\nImprovements applied:")
-    print("  ✓ 6 suppliers (5 specialized + 1 general wholesale)")
+    print("  ✓ 9 suppliers (7 specialized + 2 general wholesale)")
     print("  ✓ General supplier can supply ALL products")
     print("  ✓ Supplier capacity increased 2-3x")
     print("  ✓ Demand reduced by 60% to match capacity")

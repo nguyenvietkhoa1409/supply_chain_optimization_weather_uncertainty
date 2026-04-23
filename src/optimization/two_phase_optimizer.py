@@ -473,9 +473,12 @@ class TwoPhaseExtensiveFormOptimizer:
                 for s in self._inacc_sups(sc, p)
             )
 
-            # Unmet demand penalty  (NO emergency term)
+            # Unmet demand penalty scaled by severity (range 1.0 -> 1.5)
+            # Reflects higher spot market prices and food security risks during extreme weather
+            scen_penalty_scale = min(1.5, max(1.0, getattr(sc, "spoilage_multiplier", 1.0)))
+            
             unmet_cost = lpSum(
-                self.prod_penalty_mult[p] * self.prod_cost[p] * unmet[k, r, p]
+                self.prod_penalty_mult[p] * self.prod_cost[p] * scen_penalty_scale * unmet[k, r, p]
                 for r in self.stores for p in self.products
                 if (k, r, p) in unmet
             )
