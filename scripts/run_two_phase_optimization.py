@@ -191,6 +191,8 @@ def main():
         network=network, products_df=products,
         supplier_product_df=supplier_product,
         demand_df=daily_demand, weather_scenarios=scenarios,
+        fleet_instances=fleet_optimizer,
+        concentration_max=0.30,
     )
     det_status, det_solution = det_model.solve(time_limit=300)
     if det_status not in ("Optimal", "Feasible"):

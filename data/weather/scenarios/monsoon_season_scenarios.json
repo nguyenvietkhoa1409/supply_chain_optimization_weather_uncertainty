@@ -18,7 +18,8 @@
       "meat": 1,
       "general": 1
     },
-    "emergency_feasible": true
+    "emergency_feasible": true,
+    "demand_reduction_factor": 1.0
   },
   {
     "scenario_id": 12,
@@ -39,7 +40,8 @@
       "meat": 1,
       "general": 1
     },
-    "emergency_feasible": true
+    "emergency_feasible": true,
+    "demand_reduction_factor": 0.95
   },
   {
     "scenario_id": 13,
@@ -60,7 +62,8 @@
       "meat": 1,
       "general": 1
     },
-    "emergency_feasible": true
+    "emergency_feasible": true,
+    "demand_reduction_factor": 0.8
   },
   {
     "scenario_id": 14,
@@ -81,7 +84,8 @@
       "meat": 1,
       "general": 1
     },
-    "emergency_feasible": true
+    "emergency_feasible": true,
+    "demand_reduction_factor": 0.55
   },
   {
     "scenario_id": 15,
@@ -102,6 +106,7 @@
       "meat": 0,
       "general": 1
     },
-    "emergency_feasible": false
+    "emergency_feasible": false,
+    "demand_reduction_factor": 0.15
   }
 ]

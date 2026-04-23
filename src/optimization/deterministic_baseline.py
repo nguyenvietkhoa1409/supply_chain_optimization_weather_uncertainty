@@ -1,115 +1,128 @@
 """
 Deterministic Baseline - Solves with expected weather conditions
 Used for VSS (Value of Stochastic Solution) comparison
+
+FIXED: Now uses TwoPhaseExtensiveFormOptimizer with a single
+expected scenario (probability-weighted average of all scenarios).
+This guarantees the same feasible set and objective structure as RP,
+so that EEV ≥ RP (ordering property) is mathematically guaranteed.
 """
 
+import copy
 import pandas as pd
 import numpy as np
-from pulp import *
 from typing import Dict, List, Tuple
-import sys
-import os
-
-sys.path.insert(0, os.path.dirname(__file__))
-from procurement_base import ProcurementOptimizer
 
 
 class DeterministicBaselineModel:
     """
-    Deterministic model using expected weather parameters
-    
-    Strategy: Take expected value of weather factors and solve once
-    Compare with stochastic solution to compute VSS
+    Deterministic EV model using expected weather parameters.
+
+    Strategy: Construct a single synthetic "expected" scenario from the
+    probability-weighted average of all weather scenario attributes,
+    then solve TwoPhaseExtensiveFormOptimizer with K=1 and probability=1.0.
+
+    This is the correct EV model per Birge & Louveaux (2011) §4.1:
+    the EV solution x*_EV must be feasible in the SAME model as RP.
     """
-    
+
     def __init__(self,
                  network: Dict,
                  products_df: pd.DataFrame,
                  supplier_product_df: pd.DataFrame,
                  demand_df: pd.DataFrame,
-                 weather_scenarios: List):
+                 weather_scenarios: List,
+                 fleet_instances: List = None,
+                 concentration_max: float = 0.30):
+
+        self.network               = network
+        self.products_df           = products_df
+        self.supplier_product_df   = supplier_product_df
+        self.demand_df             = demand_df
+        self.scenarios             = weather_scenarios
+        self.fleet_instances       = fleet_instances
+        self.concentration_max     = concentration_max
+
+        # Build expected scenario (probability-weighted average)
+        self._expected_scenario = self._build_expected_scenario()
+
+        print(f"Deterministic Baseline (EV model) Initialized:")
+        sc = self._expected_scenario
+        print(f"  Expected severity : {sc.severity_level:.2f}")
+        print(f"  Speed factor      : {sc.speed_reduction_factor:.3f}")
+        print(f"  Spoilage mult     : {sc.spoilage_multiplier:.3f}")
+
+    def _build_expected_scenario(self):
         """
-        Args:
-            Same as stochastic model
+        Build a single synthetic scenario by probability-weighting all attributes.
+        Accessibility is set to the expected fraction (rounded to 1 = accessible if ≥ 0.5).
         """
-        
-        self.network = network
-        self.products_df = products_df
-        self.supplier_product_df = supplier_product_df
-        self.demand_df = demand_df
-        self.scenarios = weather_scenarios
-        
-        # Compute expected weather parameters
-        self.expected_capacity_factor = sum(
-            s.probability * s.capacity_reduction_factor 
-            for s in weather_scenarios
-        )
-        self.expected_spoilage_mult = sum(
-            s.probability * s.spoilage_multiplier 
-            for s in weather_scenarios
-        )
-        
-        print(f"Deterministic Baseline Initialized:")
-        print(f"  - Expected capacity factor: {self.expected_capacity_factor:.3f}")
-        print(f"  - Expected spoilage multiplier: {self.expected_spoilage_mult:.3f}")
-    
+        import copy
+
+        # weighted average of continuous attributes
+        p_total = sum(s.probability for s in self.scenarios)
+        probs   = [s.probability / p_total for s in self.scenarios]
+
+        # Use first scenario as template, then overwrite fields
+        ev_sc = copy.deepcopy(self.scenarios[0])
+        ev_sc.name              = "EV_Expected"
+        ev_sc.probability       = 1.0   # single scenario → full weight
+
+        # Weighted averages
+        ev_sc.severity_level         = round(sum(p * s.severity_level
+                                                  for p, s in zip(probs, self.scenarios)))
+        ev_sc.speed_reduction_factor = sum(p * s.speed_reduction_factor
+                                           for p, s in zip(probs, self.scenarios))
+        ev_sc.capacity_reduction_factor = sum(p * s.capacity_reduction_factor
+                                              for p, s in zip(probs, self.scenarios))
+        ev_sc.spoilage_multiplier    = sum(p * s.spoilage_multiplier
+                                           for p, s in zip(probs, self.scenarios))
+
+        # Emergency: feasible only if majority of scenarios allow it
+        ev_sc.emergency_feasible = (sum(p for p, s in zip(probs, self.scenarios)
+                                        if getattr(s, "emergency_feasible", True)) >= 0.5)
+
+        # Clamp severity to a valid integer (1-5)
+        ev_sc.severity_level = max(1, min(5, int(ev_sc.severity_level)))
+
+        return ev_sc
+
     def solve(self, time_limit: int = 300) -> Tuple[str, Dict]:
         """
-        Solve deterministic model with expected weather
-        FIXED: Proper capacity reduction (not increase!)
+        Solve EV model using TwoPhaseExtensiveFormOptimizer with the
+        single expected scenario. Returns a solution dict with key
+        'stage1_procurement' compatible with compute_eev().
         """
-        
-        print("\nSolving deterministic model with expected weather...")
-        
-        # CRITICAL FIX: Capacity should be REDUCED by weather, not increased
-        # capacity_factor < 1.0 means reduced capacity
-        # But we're taking expected value, so check if > 1.0 (bug indicator)
-        
-        if self.expected_capacity_factor > 1.0:
-            print(f"  ⚠ WARNING: Capacity factor > 1.0 ({self.expected_capacity_factor:.3f})")
-            print(f"    This indicates probability normalization issue!")
-            print(f"    Using 0.9 as conservative estimate instead.")
-            effective_capacity_factor = 0.90
-        else:
-            effective_capacity_factor = self.expected_capacity_factor
-        
-        # Create adjusted network with expected capacity
-        import copy
-        adjusted_network = copy.deepcopy(self.network)
-        adjusted_network['suppliers'] = self.network['suppliers'].copy()
-        adjusted_network['suppliers']['capacity_kg_per_day'] = \
-            self.network['suppliers']['capacity_kg_per_day'] * effective_capacity_factor
-        
-        print(f"  Adjusted capacity factor: {effective_capacity_factor:.3f}")
-        print(f"  Original total capacity: {self.network['suppliers']['capacity_kg_per_day'].sum():,.0f} kg/day")
-        print(f"  Adjusted total capacity: {adjusted_network['suppliers']['capacity_kg_per_day'].sum():,.0f} kg/day")
-        
-        # Use base optimizer with adjusted parameters
-        optimizer = ProcurementOptimizer(
-            network=adjusted_network,
-            products_df=self.products_df,
-            supplier_product_df=self.supplier_product_df,
-            demand_df=self.demand_df
+        print("\nSolving EV deterministic model (TwoPhase, expected scenario)...")
+
+        if self.fleet_instances is None:
+            raise ValueError(
+                "DeterministicBaselineModel requires fleet_instances. "
+                "Pass fleet_instances= in the constructor."
+            )
+
+        from optimization.two_phase_optimizer import TwoPhaseExtensiveFormOptimizer
+
+        optimizer = TwoPhaseExtensiveFormOptimizer(
+            network              = self.network,
+            products_df          = self.products_df,
+            supplier_product_df  = self.supplier_product_df,
+            demand_df            = self.demand_df,
+            weather_scenarios    = [self._expected_scenario],   # K = 1
+            fleet_instances      = self.fleet_instances,
+            concentration_max    = self.concentration_max,      # same as RP
         )
-        
-        # Solve
-        status, solution = optimizer.solve(time_limit=time_limit)
-        
-        if status == 'Optimal':
-            base_obj = solution['objective_value']
-            
-            # Adjust for expected spoilage penalty
-            if not solution['unmet_demand'].empty:
-                additional_penalty = solution['unmet_demand']['penalty_cost_vnd'].sum() * \
-                                (self.expected_spoilage_mult - 1.0)
-                adjusted_obj = base_obj + additional_penalty
-            else:
-                adjusted_obj = base_obj
-            
-            solution['deterministic_objective'] = adjusted_obj
-            solution['expected_capacity_factor'] = effective_capacity_factor
-            solution['expected_spoilage_mult'] = self.expected_spoilage_mult
-        
+
+        status, solution = optimizer.solve(
+            time_limit    = time_limit,
+            gap_tolerance = 0.05,
+        )
+
+        if status in ("Optimal", "Feasible"):
+            print(f"  ✓ EV Stage-1 solved: obj = {solution.get('objective_value', 0):,.0f} VND")
+        else:
+            print(f"  ⚠ EV solve failed: {status}")
+
         return status, solution
 
 

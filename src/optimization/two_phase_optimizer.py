@@ -112,7 +112,7 @@ class TwoPhaseExtensiveFormOptimizer:
         weather_scenarios:    List,
         fleet_instances:      List[Dict],
         baseline_ratio:       float = 0.70,
-        concentration_max:    float = 0.40,
+        concentration_max:    float = 0.30,
         refrig_penalty_factor: float = 1.5,
     ):
         self.network    = network

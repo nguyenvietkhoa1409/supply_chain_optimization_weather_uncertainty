@@ -77,8 +77,8 @@ VEHICLE_TYPES = [
         # ── Cost (VND) ────────────────────────────────────────────────
         "fixed_cost_vnd":       600_000,            # daily dispatch + driver daily wage
         "loading_cost_per_stop": 100_000,            # loading cost
-        "cost_per_km_vnd":      5_500,              # fuel (RON95) + driver
-        "cost_per_hour_vnd":    50_000,             # driver hourly rate
+        "cost_per_km_vnd":      12_000,              # fuel (RON95) + driver
+        "cost_per_hour_vnd":    80_000,             # driver hourly rate
 
         # ── Performance ───────────────────────────────────────────────
         "base_speed_kmh":       50,                 # nimble in city traffic
@@ -102,8 +102,8 @@ VEHICLE_TYPES = [
         "volume_m3":            3.0,
 
         "fixed_cost_vnd":       400_000,
-        "cost_per_km_vnd":      6_000,
-        "cost_per_hour_vnd":    45_000,
+        "cost_per_km_vnd":      14_000,
+        "cost_per_hour_vnd":    90_000,
 
         "base_speed_kmh":       40,
         "refrigerated":         False,

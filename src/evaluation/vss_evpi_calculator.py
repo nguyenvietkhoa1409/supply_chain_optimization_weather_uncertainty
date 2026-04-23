@@ -116,6 +116,7 @@ class StochasticValidator:
                 network=network, products_df=products_df,
                 supplier_product_df=supplier_product_df, demand_df=demand_df,
                 weather_scenarios=scenarios, fleet_instances=fleet_instances,
+                concentration_max=0.30,  # must match RP feasible set
             )
             status, solution = optimizer.solve(
                 time_limit=time_limit_per_scenario * len(scenarios),
@@ -412,7 +413,7 @@ class StochasticValidator:
         # - 2% relative tolerance for numerical noise from MIP gap
         # - Ensures minor solver suboptimality (<= 5% MIP gap) doesn't trigger false alarms
         ws_le_rp  = ws  <= rp  + max(1e-3, rp  * 0.02)
-        rp_le_eev = rp  <= eev + max(1e-3, eev * 0.06)  # 6% = MIP gap(5%) + floating point
+        rp_le_eev = rp  <= eev + max(1e-3, eev * 0.02)  # 2% = MIP gap tolerance only
 
         reasons = []
         if not ws_le_rp:

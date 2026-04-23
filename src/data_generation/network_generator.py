@@ -210,7 +210,8 @@ class DaNangNetworkGenerator:
             a = np.sin(dphi/2)**2 + np.cos(phi1) * np.cos(phi2) * np.sin(dlambda/2)**2
             c = 2 * np.arctan2(np.sqrt(a), np.sqrt(1-a))
             
-            return R * c
+            DETOUR_FACTOR = 1.5
+            return R * c * DETOUR_FACTOR
         
         n = len(locations_df)
         distance_matrix = np.zeros((n, n))
